@@ -1,0 +1,17 @@
+# Dependências gigantes (não enviar)
+node_modules/
+venv/
+env/
+
+# Arquivos de segurança (NUNCA ENVIE ISSO)
+.env
+
+# Arquivos gerados/Cache (não enviar lixo)
+__pycache__/
+*.pyc
+.DS_Store
+
+# Pastas de saída (Vídeos e Projetos gerados)
+backend/static/
+backend/projects/
+dist/
