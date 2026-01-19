@@ -1,297 +1,232 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Clapperboard, Play, Loader2, Video, RefreshCw, AlertCircle, Download, CheckCircle, History, Type, Music2 } from 'lucide-react';
+import { Clapperboard, Loader2, Search, Globe, Film, Bot, BrainCircuit, Cpu, Terminal, Clock, Mic, Download, Monitor, Smartphone } from 'lucide-react'; // ✅ Adicionado Monitor e Smartphone
 
-export default function ViralShortsStudio() {
-  const [prompt, setPrompt] = useState("");
+export default function MagnateAI() {
+  const [topic, setTopic] = useState("The Rise of NVIDIA");
   const [status, setStatus] = useState('idle');
-  const [data, setData] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
   const [videoUrl, setVideoUrl] = useState(null);
-  const [regeneratingId, setRegeneratingId] = useState(null);
+  const [logs, setLogs] = useState([]);
   
-  // Lista de projetos e ID atual
-  const [projects, setProjects] = useState([]);
-  const [currentProjectId, setCurrentProjectId] = useState(null);
-
-  // Novo estado para o estilo da legenda
-  const [subtitleStyle, setSubtitleStyle] = useState('karaoke'); // 'static' ou 'karaoke'
+  const [availableModels, setAvailableModels] = useState({ gemini: [], openai: [] });
+  
+  const [writerProvider, setWriterProvider] = useState("gemini");
+  const [writerModel, setWriterModel] = useState("");
+  
+  const [criticProvider, setCriticProvider] = useState("gemini");
+  const [criticModel, setCriticModel] = useState("");
+  
+  const [duration, setDuration] = useState("medium");
+  const [voiceProvider, setVoiceProvider] = useState("no_preference");
+  const [aspectRatio, setAspectRatio] = useState("horizontal"); // ✅ NOVO: Aspect Ratio
+  
+  const logsEndRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
-    fetchProjects();
+    axios.get('http://localhost:8000/available-models')
+      .then(res => setAvailableModels(res.data))
+      .catch(err => console.error(err));
   }, []);
 
-  const fetchProjects = async () => {
-    try {
-      const res = await axios.get('http://localhost:8000/api/projects');
-      setProjects(res.data);
-    } catch (e) { console.error("Erro ao buscar projetos", e); }
-  };
+  useEffect(() => {
+    const list = availableModels[writerProvider] || [];
+    if (list.length > 0) setWriterModel(list[0].id);
+  }, [writerProvider, availableModels]);
 
-  const loadProject = async (id) => {
-    setStatus('loading');
-    try {
-      const res = await axios.get(`http://localhost:8000/api/projects/${id}`);
-      setData(res.data);
-      setPrompt(res.data.prompt);
-      setCurrentProjectId(res.data.id);
-      setVideoUrl(res.data.video_url || null);
-      setStatus(res.data.video_url ? 'success' : 'done');
-    } catch (e) {
-      alert("Erro ao abrir projeto. Verifique o terminal Python.");
+  useEffect(() => {
+    const list = availableModels[criticProvider] || [];
+    if (list.length > 0) setCriticModel(list[0].id);
+  }, [criticProvider, availableModels]);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  // ✅ Força reload do vídeo quando URL muda
+  useEffect(() => {
+    if (videoUrl && videoRef.current) {
+      videoRef.current.load();
     }
-  };
+  }, [videoUrl]);
 
-  const handleGenerate = async () => {
-    setStatus('loading');
-    setData(null);
+  const handleCreateStream = () => {
+    setStatus('streaming');
     setVideoUrl(null);
-    setErrorMsg('');
+    setLogs([]);
     
-    try {
-      const res = await axios.post('http://localhost:8000/direct-video', { raw_prompt: prompt });
-      if (res.data.error) {
-        setStatus('error');
-        setErrorMsg(res.data.error);
-      } else {
-        setData(res.data);
-        setCurrentProjectId(res.data.id);
+    const url = `http://localhost:8000/create-stream?topic=${encodeURIComponent(topic)}&writer_provider=${writerProvider}&writer_model=${writerModel}&critic_provider=${criticProvider}&critic_model=${criticModel}&duration=${duration}&voice_provider=${voiceProvider}&aspect_ratio=${aspectRatio}`;
+    
+    const eventSource = new EventSource(url);
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.log) setLogs(prev => [...prev, `> ${data.log}`]);
+      if (data.status === 'done') {
+        console.log('✅ Vídeo pronto:', data.url); // ✅ Debug
+        setVideoUrl(data.url);
         setStatus('done');
-        fetchProjects();
+        eventSource.close();
       }
-    } catch (error) {
-      setStatus('error');
-      setErrorMsg("Erro de conexão.");
-    }
-  };
-
-  const handleRender = async () => {
-    if (!data || !data.assets) return;
-    setStatus('rendering');
-    try {
-      const res = await axios.post('http://localhost:8000/render-video', { 
-        project_id: currentProjectId,
-        assets: data.assets,
-        subtitle_style: subtitleStyle // Envia a escolha do usuário
-      });
-      if (res.data.video_url) {
-        setVideoUrl(res.data.video_url);
-        setStatus('success');
-        fetchProjects();
-      } else {
+      if (data.status === 'error') {
         setStatus('error');
-        setErrorMsg("Erro ao renderizar vídeo.");
+        setLogs(prev => [...prev, `🛑 ERRO: ${data.message}`]);
+        eventSource.close();
       }
-    } catch (error) {
-      setStatus('error');
-      setErrorMsg("Falha na renderização.");
-    }
-  };
-
-  const handleRegenerateScene = async (sceneId, searchTerm, aiPrompt) => {
-    setRegeneratingId(sceneId);
-    try {
-      const res = await axios.post('http://localhost:8000/regenerate-scene', {
-        project_id: currentProjectId,
-        scene_id: sceneId,
-        visual_search_term: searchTerm,
-        visual_ai_prompt: aiPrompt
-      });
-
-      const newAssets = data.assets.map(asset => {
-        if (asset.id === sceneId) {
-          return { ...asset, media_url: res.data.media_url, type: res.data.type };
-        }
-        return asset;
-      });
-
-      setData({ ...data, assets: newAssets });
-    } catch (error) {
-      alert("Erro ao trocar cena.");
-    } finally {
-      setRegeneratingId(null);
-    }
+    };
+    
+    eventSource.onerror = (err) => {
+      console.error('❌ EventSource error:', err);
+      eventSource.close();
+    };
   };
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans flex flex-col md:flex-row">
-      
-      {/* 1. Sidebar Histórico */}
-      <div className="w-full md:w-64 bg-gray-950 border-r border-gray-800 p-4 flex flex-col h-screen overflow-y-auto">
-        <div className="flex items-center gap-2 text-gray-400 mb-6 font-bold uppercase text-xs tracking-wider">
-          <History size={16} /> Histórico de Projetos
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col md:flex-row">
+      <div className="w-full md:w-1/3 p-6 border-r border-slate-800 flex flex-col gap-6 bg-slate-900 overflow-y-auto">
+        <div className="flex items-center gap-3 text-emerald-500">
+          <Globe size={28} />
+          <h1 className="text-2xl font-bold tracking-tighter text-white">MAGNATE <span className="text-emerald-500">STUDIO</span></h1>
         </div>
-        <div className="space-y-2">
-          {projects.map(p => (
-            <button
-              key={p.id}
-              onClick={() => loadProject(p.id)}
-              className={`w-full text-left p-3 rounded-lg text-sm transition-all border ${
-                currentProjectId === p.id 
-                  ? 'bg-yellow-900/30 border-yellow-600 text-yellow-500' 
-                  : 'bg-gray-900 border-gray-800 text-gray-400 hover:bg-gray-800'
+
+        {/* DURAÇÃO */}
+        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
+            <Clock size={14} /> Duração do Vídeo
+          </label>
+          <select value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500">
+            <option value="short">⚡ Curto (Shorts/TikTok - 30s)</option>
+            <option value="medium">📺 Médio (Padrão YouTube - 3min)</option>
+            <option value="long">📽️ Longo (Documentário - 10min+)</option>
+            <option value="surprise">🎲 Surpreenda-me (IA Decide)</option>
+          </select>
+        </div>
+
+        {/* FORMATO DE TELA - NOVO */}
+        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
+            <Monitor size={14} /> Formato de Tela
+          </label>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setAspectRatio('vertical')} 
+              className={`flex-1 py-3 rounded-lg text-xs font-bold border transition-all ${
+                aspectRatio === 'vertical' 
+                  ? 'bg-purple-600 text-white border-purple-500' 
+                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600'
               }`}
             >
-              <div className="font-bold">{p.id}</div>
-              <div className="truncate text-xs opacity-70 mt-1">{p.prompt}</div>
-              {p.has_video && <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500"><CheckCircle size={10}/> Vídeo Pronto</div>}
+              <Smartphone size={16} className="mx-auto mb-1" />
+              <div>Vertical</div>
+              <div className="text-[10px] opacity-60">9:16 Shorts</div>
             </button>
-          ))}
-          {projects.length === 0 && <div className="text-gray-600 text-xs text-center py-4">Nenhum projeto ainda</div>}
+            <button 
+              onClick={() => setAspectRatio('horizontal')} 
+              className={`flex-1 py-3 rounded-lg text-xs font-bold border transition-all ${
+                aspectRatio === 'horizontal' 
+                  ? 'bg-blue-600 text-white border-blue-500' 
+                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600'
+              }`}
+            >
+              <Monitor size={16} className="mx-auto mb-1" />
+              <div>Horizontal</div>
+              <div className="text-[10px] opacity-60">16:9 YouTube</div>
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* 2. Área de Controle */}
-      <div className="w-full md:w-1/3 p-6 border-r border-gray-800 flex flex-col gap-6 bg-black">
-        <div className="flex items-center gap-2 text-yellow-500">
-          <Clapperboard size={32} />
-          <h1 className="text-2xl font-bold tracking-tighter">VIRAL STUDIO</h1>
-        </div>
-
-        <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 shadow-lg">
-          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex justify-between">
-            Prompt do Diretor
-            {currentProjectId && <span className="text-yellow-600">ID: {currentProjectId}</span>}
+        {/* NARRADOR (VOZ) */}
+        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
+            <Mic size={14} /> Narrador (Voz)
           </label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full h-48 bg-black mt-2 p-4 rounded-lg border border-gray-700 text-gray-300 focus:border-yellow-500 outline-none resize-none"
-            placeholder="Descreva seu vídeo aqui..."
-          />
-          <button
-            onClick={handleGenerate}
-            disabled={status === 'loading' || status === 'rendering'}
-            className="w-full mt-4 bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
-          >
-            {status === 'loading' ? <Loader2 className="animate-spin" /> : <Play size={20} fill="black" />}
-            {status === 'loading' ? 'CRIANDO NOVO PROJETO...' : 'NOVO PROJETO'}
+          <select value={voiceProvider} onChange={(e) => setVoiceProvider(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500">
+            <option value="elevenlabs">ElevenLabs (Premium)</option>
+            <option value="edge_tts">Edge TTS (Gratuito)</option>
+            <option value="no_preference">Sem Preferência (Auto)</option>
+          </select>
+        </div>
+
+        {/* ROTEIRISTA */}
+        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+          <label className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2 mb-3">
+            <Bot size={14} /> Roteirista (Criativo)
+          </label>
+          <div className="flex gap-2 mb-3">
+            <button onClick={() => setWriterProvider('gemini')} className={`flex-1 py-1 rounded text-xs font-bold border ${writerProvider === 'gemini' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Gemini</button>
+            <button onClick={() => setWriterProvider('openai')} className={`flex-1 py-1 rounded text-xs font-bold border ${writerProvider === 'openai' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400'}`}>OpenAI</button>
+          </div>
+          <select value={writerModel} onChange={(e) => setWriterModel(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm">
+            {availableModels[writerProvider]?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </div>
+
+        {/* CRÍTICO */}
+        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+          <label className="text-xs font-bold text-red-400 uppercase flex items-center gap-2 mb-3">
+            <BrainCircuit size={14} /> Crítico (Analítico)
+          </label>
+          <div className="flex gap-2 mb-3">
+            <button onClick={() => setCriticProvider('gemini')} className={`flex-1 py-1 rounded text-xs font-bold border ${criticProvider === 'gemini' ? 'bg-red-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Gemini</button>
+            <button onClick={() => setCriticProvider('openai')} className={`flex-1 py-1 rounded text-xs font-bold border ${criticProvider === 'openai' ? 'bg-red-600 text-white' : 'bg-slate-900 text-slate-400'}`}>OpenAI</button>
+          </div>
+          <select value={criticModel} onChange={(e) => setCriticModel(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm">
+            {availableModels[criticProvider]?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </div>
+
+        <div className="flex-1 flex flex-col gap-4">
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
+            <Search size={14} /> Tópico Viral
+          </label>
+          <textarea value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full h-32 bg-slate-950 p-4 rounded-lg border border-slate-700 text-white focus:border-emerald-500 outline-none resize-none text-lg font-medium" />
+          
+          <button onClick={handleCreateStream} disabled={status === 'streaming'} className={`w-full font-bold py-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-lg ${status === 'streaming' ? 'bg-slate-700 cursor-wait text-slate-300' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
+            {status === 'streaming' ? <><Loader2 className="animate-spin" /> BATALHANDO...</> : <><Film size={20} /> INICIAR PRODUÇÃO</>}
           </button>
         </div>
 
-        {/* Botão Renderizar */}
-        {data && (
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 animate-fade-in">
-            <h3 className="font-bold mb-4 text-gray-300 flex items-center gap-2">
-              <Type size={18} /> Estilo da Legenda
-            </h3>
-            
-            {/* Seletor de Estilo */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <button
-                onClick={() => setSubtitleStyle('static')}
-                className={`p-3 rounded border text-sm font-bold flex flex-col items-center gap-1 transition-all ${
-                  subtitleStyle === 'static' 
-                    ? 'bg-white text-black border-white' 
-                    : 'bg-gray-800 text-gray-400 border-gray-600 hover:bg-gray-700'
-                }`}
-              >
-                <span className="text-xs uppercase">Título Fixo</span>
-                <span>"Texto da Tela"</span>
-              </button>
-              
-              <button
-                onClick={() => setSubtitleStyle('karaoke')}
-                className={`p-3 rounded border text-sm font-bold flex flex-col items-center gap-1 transition-all ${
-                  subtitleStyle === 'karaoke' 
-                    ? 'bg-yellow-500 text-black border-yellow-500' 
-                    : 'bg-gray-800 text-gray-400 border-gray-600 hover:bg-gray-700'
-                }`}
-              >
-                <span className="text-xs uppercase">Karaokê Viral</span>
-                <span>"Texto Dinâmico"</span>
-              </button>
-            </div>
-
-            <button
-              onClick={handleRender}
-              disabled={status === 'rendering'}
-              className={`w-full font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all ${
-                status === 'success' ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-pink-600 hover:bg-pink-500 text-white'
-              }`}
-            >
-              {status === 'rendering' ? (
-                <> <Loader2 className="animate-spin" /> RENDERIZANDO... </>
-              ) : status === 'success' ? (
-                <> <CheckCircle /> VÍDEO PRONTO! (REFAZER) </>
-              ) : (
-                <> <Video /> RENDERIZAR VÍDEO MP4 </>
-              )}
-            </button>
-
-            {videoUrl && (
-              <a 
-                href={videoUrl} 
-                download={`viral_video_${currentProjectId}.mp4`}
-                className="mt-3 block w-full bg-gray-800 hover:bg-gray-700 text-center py-2 rounded text-sm text-gray-300 border border-gray-600 flex items-center justify-center gap-2"
-                target="_blank"
-              >
-                <Download size={16} /> Baixar Arquivo
-              </a>
-            )}
+        <div className="bg-black rounded-lg p-4 font-mono text-xs text-green-400 border border-slate-800 h-48 overflow-hidden flex flex-col">
+          <div className="flex items-center gap-2 text-slate-500 border-b border-slate-800 pb-2 mb-2"><Terminal size={12} /> LOGS</div>
+          <div className="overflow-y-auto flex-1 scrollbar-hide">
+            {logs.map((log, i) => <div key={i} className="mb-1 break-words">{log}</div>)}
+            <div ref={logsEndRef} />
           </div>
-        )}
-        
-        {status === 'error' && (
-          <div className="p-4 bg-red-900/50 border border-red-500 rounded text-red-200 text-sm flex gap-2">
-            <AlertCircle className="shrink-0" /> {errorMsg}
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* 3. Área de Preview */}
-      <div className="flex-1 p-6 bg-gray-950 overflow-y-auto h-screen">
-        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-          <Video size={20} /> Preview da Timeline
-        </h2>
-        
-        {videoUrl && (
-          <div className="mb-8 max-w-sm mx-auto border-2 border-green-500 rounded-lg overflow-hidden shadow-2xl shadow-green-900/50">
-            <video src={videoUrl} controls autoPlay className="w-full" />
-            <div className="bg-green-900 text-center text-xs py-1 text-green-100 font-bold uppercase">Resultado Final - {currentProjectId}</div>
+      <div className="flex-1 p-10 bg-black flex flex-col items-center justify-center relative">
+        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{backgroundImage: 'radial-gradient(circle, #333 1px, transparent 1px)', backgroundSize: '30px 30px'}}></div>
+        {!videoUrl ? (
+          <div className="text-center opacity-30 flex flex-col items-center">
+            <Clapperboard size={64} className="mb-4" />
+            <h2 className="text-2xl font-bold">{status === 'streaming' ? 'PRODUZINDO...' : 'AGUARDANDO'}</h2>
+          </div>
+        ) : (
+          <div className="w-full max-w-5xl z-10">
+            <video 
+              ref={videoRef}
+              controls 
+              autoPlay 
+              className={`w-full rounded-xl shadow-2xl border border-slate-800 ${
+                aspectRatio === 'vertical' ? 'max-w-md mx-auto' : 'max-w-5xl'
+              }`}
+              style={aspectRatio === 'vertical' ? { aspectRatio: '9/16' } : {}}
+              onError={(e) => console.error('❌ Erro no player:', e)}
+              onLoadedMetadata={() => console.log('✅ Vídeo carregado')}
+            >
+              <source src={videoUrl} type="video/mp4" />
+              Seu navegador não suporta vídeo HTML5.
+            </video>
+            <a 
+              href={videoUrl} 
+              download 
+              className="mt-6 inline-flex items-center justify-center w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg gap-2"
+            >
+              <Download size={18} /> Baixar Vídeo
+            </a>
           </div>
         )}
-
-        <div className="grid gap-4 max-w-3xl mx-auto pb-20">
-          {data && data.assets && data.assets.map((scene, idx) => {
-            const scenePlan = data.plan.scenes.find(s => s.id === scene.id);
-            return (
-              <div key={idx} className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden flex shadow-lg group">
-                <div className="w-32 h-48 bg-black relative flex-shrink-0">
-                   {scene.type === 'video' ? (
-                     <video key={scene.media_url} src={scene.media_url} className="w-full h-full object-cover opacity-80" muted loop />
-                   ) : (
-                     <img key={scene.media_url} src={scene.media_url} className="w-full h-full object-cover opacity-80" />
-                   )}
-                   
-                   <button 
-                      onClick={() => handleRegenerateScene(scene.id, scenePlan?.visual_search_term || "scene", scenePlan?.visual_ai_prompt || "scene")}
-                      disabled={regeneratingId === scene.id}
-                      className="absolute top-2 right-2 bg-black/60 hover:bg-yellow-600 p-1.5 rounded-full text-white transition-all z-10 border border-white/20"
-                      title="Trocar Cena"
-                   >
-                      {regeneratingId === scene.id ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14} />}
-                   </button>
-
-                   <div className="absolute bottom-0 w-full bg-black/80 text-[10px] text-center py-1 text-gray-400">
-                     {scene.duration}s
-                   </div>
-                </div>
-                <div className="p-4 flex flex-col justify-between flex-1">
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-yellow-500 font-bold text-xs uppercase">CENA {idx + 1}</span>
-                      <span className="text-[10px] text-gray-500 border border-gray-700 px-1 rounded">{scene.type.toUpperCase()}</span>
-                    </div>
-                    <p className="text-gray-300 text-sm italic mb-3">"{scene.narration}"</p>
-                    <span className="text-xs font-bold bg-white text-black px-2 py-0.5 rounded">{scene.text}</span>
-                  </div>
-                  <audio controls src={scene.audio_url} className="w-full h-8 block mt-2" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </div>
     </div>
   );
