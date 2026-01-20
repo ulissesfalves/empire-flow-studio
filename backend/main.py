@@ -188,6 +188,90 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 LUMA_API_KEY = os.getenv("LUMA_API_KEY")
 
+# --- CONFIGURAÇÕES DE VOZ ---
+VOICE_CONFIGS = {
+    # OpenAI TTS Voices
+    "openai_onyx": {
+        "provider": "openai",
+        "voice": "onyx",
+        "name": "Onyx (Deep)",
+        "description": "Voz masculina profunda e autoritária"
+    },
+    "openai_alloy": {
+        "provider": "openai",
+        "voice": "alloy",
+        "name": "Alloy (Neutral)",
+        "description": "Voz neutra e versátil"
+    },
+    "openai_echo": {
+        "provider": "openai",
+        "voice": "echo",
+        "name": "Echo (Soft)",
+        "description": "Voz suave e calma"
+    },
+    "openai_nova": {
+        "provider": "openai",
+        "voice": "nova",
+        "name": "Nova (Energetic)",
+        "description": "Voz energética e jovem"
+    },
+    # ElevenLabs (usa ELEVENLABS_VOICE_ID do .env)
+    "elevenlabs": {
+        "provider": "elevenlabs",
+        "voice": None,  # Usa ELEVENLABS_VOICE_ID
+        "name": "ElevenLabs (Premium)",
+        "description": "Voz configurada no .env"
+    },
+    # Edge TTS
+    "edge_tts": {
+        "provider": "edge",
+        "voice": "en-US-ChristopherNeural",
+        "name": "Edge TTS (Gratuito)",
+        "description": "Voz gratuita da Microsoft"
+    },
+    # Gemini TTS (experimental)
+    "gemini_tts": {
+        "provider": "gemini",
+        "voice": "en-US-Neural2-J",
+        "name": "Gemini TTS",
+        "description": "Síntese de voz do Google AI"
+    }
+}
+
+# Estilos de narração
+VOICE_STYLES = {
+    "hype": {
+        "name": "Hype/Fast",
+        "speed": 1.15,
+        "pitch": "+5Hz",
+        "instruction": "Speak with high energy, enthusiasm, and fast pacing. Perfect for viral content and hype moments."
+    },
+    "storyteller": {
+        "name": "Storyteller",
+        "speed": 1.0,
+        "pitch": "0Hz",
+        "instruction": "Speak like a captivating storyteller with varied tone, dramatic pauses, and emotional inflection."
+    },
+    "documentary": {
+        "name": "Documentary",
+        "speed": 0.95,
+        "pitch": "-3Hz",
+        "instruction": "Speak with authoritative clarity, measured pacing, and professional documentary tone."
+    },
+    "asmr": {
+        "name": "ASMR/Calm",
+        "speed": 0.85,
+        "pitch": "-5Hz",
+        "instruction": "Speak in a soft, soothing, calm whisper with gentle pacing and relaxing tone."
+    },
+    "authoritative": {
+        "name": "Authoritative",
+        "speed": 0.90,
+        "pitch": "-8Hz",
+        "instruction": "Speak with commanding authority, deep resonance, and confident assertiveness."
+    }
+}
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -346,14 +430,15 @@ def stitch_video_files(video_files, output_path):
 
 # --- LOGGER ---
 class ProjectLogger:
-    def __init__(self, project_path, topic, writer_config, critic_config, duration, voice_provider):
+    def __init__(self, project_path, topic, writer_config, critic_config, duration, voice_config, voice_style):
         self.filepath = os.path.join(project_path, "production_log.json")
         self.data = {
             "meta": {
                 "project_id": os.path.basename(project_path),
                 "topic": topic,
                 "duration_mode": duration,
-                "voice_provider": voice_provider,
+                "voice_config": voice_config,
+                "voice_style": voice_style,
                 "performance_profile": CURRENT_PROFILE,
                 "agents": {"writer": writer_config, "critic": critic_config},
                 "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -673,56 +758,133 @@ Output JSON: {{ "score": (0-100), "feedback": "Fix instructions." }}
         yield {"type": "result", "content": current_draft_json}
 
 # --- GERAÇÃO DE MÍDIA ---
-async def generate_visuals_and_audio(scene, index, act_index, project_path, voice_provider):
+async def generate_visuals_and_audio(scene, index, act_index, project_path, voice_config_key, voice_style):
     narr_text = scene.get('narration') or scene.get('script') or scene.get('text')
     if not narr_text: return None
+    
     audio_path = os.path.join(project_path, f"act{act_index}_scene{index}.mp3")
     clean_txt = clean_text_for_tts(narr_text)
-
+    
+    # Obtém configurações de voz e estilo
+    voice_config = VOICE_CONFIGS.get(voice_config_key, VOICE_CONFIGS["edge_tts"])
+    style_config = VOICE_STYLES.get(voice_style, VOICE_STYLES["documentary"])
+    
+    # Adiciona instrução de estilo ao texto (para TTS que suportam)
+    styled_prompt = f"{style_config['instruction']}\n\n{clean_txt}"
+    
     tts_model_used = "None"
-
-    # LÓGICA DE SELEÇÃO DE VOZ
-    use_elevenlabs = False
-
-    if voice_provider == "elevenlabs":
-        use_elevenlabs = True
-    elif voice_provider == "no_preference" and ELEVENLABS_API_KEY:
-        use_elevenlabs = True
-
-    if use_elevenlabs:
-        if not ELEVENLABS_API_KEY:
-            if voice_provider == "elevenlabs":
-                return {"error": "ERRO VOZ: ElevenLabs selecionado mas sem chave API."}
-            else:
-                use_elevenlabs = False
-        else:
-            try:
-                url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-                headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
-                data = {"text": clean_txt, "model_id": "eleven_turbo_v2"}
-                r = requests.post(url, json=data, headers=headers, timeout=15)
-
-                if r.status_code == 200:
-                    with open(audio_path, 'wb') as f: f.write(r.content)
-                    tts_model_used = "ElevenLabs"
-                else:
-                    error_msg = f"ElevenLabs Error ({r.status_code}): {r.text}"
-                    if voice_provider == "elevenlabs":
-                        return {"error": f"FALHA NA VOZ (CRÍTICO): {error_msg}. Troque para Edge TTS ou No Preference."}
-                    else:
-                        use_elevenlabs = False
-            except Exception as e:
-                if voice_provider == "elevenlabs":
-                    return {"error": f"FALHA NA VOZ: {str(e)}"}
-                use_elevenlabs = False
-
-    if not use_elevenlabs:
+    provider = voice_config["provider"]
+    
+    # ===== OPENAI TTS =====
+    if provider == "openai":
+        if not OPENAI_API_KEY:
+            return {"error": "ERRO VOZ: OpenAI TTS selecionado mas sem chave API."}
+        
         try:
+            from openai import OpenAI
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            
+            response = client.audio.speech.create(
+                model="tts-1-hd",  # ou "tts-1" para mais rápido
+                voice=voice_config["voice"],
+                input=clean_txt,
+                speed=style_config["speed"]
+            )
+            
+            response.stream_to_file(audio_path)
+            tts_model_used = f"OpenAI TTS ({voice_config['voice']})"
+        
+        except Exception as e:
+            return {"error": f"FALHA OpenAI TTS: {str(e)}"}
+    
+    # ===== ELEVENLABS =====
+    elif provider == "elevenlabs":
+        if not ELEVENLABS_API_KEY:
+            return {"error": "ERRO VOZ: ElevenLabs selecionado mas sem chave API."}
+        
+        try:
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+            headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
+            
+            # ElevenLabs suporta stability e similarity_boost para controle de estilo
+            data = {
+                "text": clean_txt,
+                "model_id": "eleven_turbo_v2",
+                "voice_settings": {
+                    "stability": 0.5 if voice_style == "hype" else 0.75,
+                    "similarity_boost": 0.75
+                }
+            }
+            
+            r = requests.post(url, json=data, headers=headers, timeout=20)
+            
+            if r.status_code == 200:
+                with open(audio_path, 'wb') as f: f.write(r.content)
+                tts_model_used = "ElevenLabs"
+            else:
+                return {"error": f"ElevenLabs Error ({r.status_code}): {r.text}"}
+        
+        except Exception as e:
+            return {"error": f"FALHA ElevenLabs: {str(e)}"}
+    
+    # ===== GEMINI TTS (usando Google Cloud TTS) =====
+    elif provider == "gemini":
+        if not GEMINI_API_KEY:
+            return {"error": "ERRO VOZ: Gemini TTS selecionado mas sem chave API."}
+        
+        try:
+            # Usa a API do Google Cloud Text-to-Speech via REST
+            url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={GEMINI_API_KEY}"
+            headers = {"Content-Type": "application/json"}
+            
+            payload = {
+                "input": {"text": clean_txt},
+                "voice": {
+                    "languageCode": "en-US",
+                    "name": voice_config["voice"],
+                    "ssmlGender": "MALE"
+                },
+                "audioConfig": {
+                    "audioEncoding": "MP3",
+                    "speakingRate": style_config["speed"],
+                    "pitch": float(style_config["pitch"].replace("Hz", ""))
+                }
+            }
+            
+            r = requests.post(url, json=payload, headers=headers, timeout=20)
+            
+            if r.status_code == 200:
+                import base64
+                audio_content = base64.b64decode(r.json()["audioContent"])
+                with open(audio_path, 'wb') as f: f.write(audio_content)
+                tts_model_used = "Gemini TTS"
+            else:
+                # Fallback para Edge TTS se Gemini falhar
+                await edge_tts.Communicate(clean_txt, "en-US-ChristopherNeural").save(audio_path)
+                tts_model_used = "EdgeTTS (Fallback)"
+        
+        except Exception as e:
+            # Fallback para Edge TTS
             await edge_tts.Communicate(clean_txt, "en-US-ChristopherNeural").save(audio_path)
+            tts_model_used = "EdgeTTS (Fallback)"
+    
+    # ===== EDGE TTS (Fallback padrão) =====
+    else:
+        try:
+            # Edge TTS com ajuste de velocidade via SSML
+            if voice_style == "hype":
+                ssml_text = f'<speak><prosody rate="fast">{clean_txt}</prosody></speak>'
+            elif voice_style == "asmr":
+                ssml_text = f'<speak><prosody rate="slow" volume="soft">{clean_txt}</prosody></speak>'
+            else:
+                ssml_text = clean_txt
+            
+            await edge_tts.Communicate(ssml_text, voice_config["voice"]).save(audio_path)
             tts_model_used = "EdgeTTS"
         except Exception as e:
-            return {"error": f"FALHA TOTAL DE VOZ (EdgeTTS falhou): {str(e)}"}
-
+            return {"error": f"FALHA TOTAL DE VOZ: {str(e)}"}
+    
+    # Geração de imagem (permanece igual)
     search_term = scene.get('visual_search_term', 'business')
     ai_prompt = scene.get('visual_ai_prompt', search_term)
     media_path = os.path.join(project_path, f"act{act_index}_media{index}.png")
@@ -844,7 +1006,7 @@ def render_scene_optimized(audio_path, media_path, output_path, aspect_ratio="ho
 
 # --- STREAMING ---
 @app.get("/create-stream")
-async def create_documentary_stream(topic: str, writer_provider: str, writer_model: str, critic_provider: str, critic_model: str, duration: str = "medium", voice_provider: str = "no_preference", aspect_ratio: str = "horizontal"):
+async def create_documentary_stream(topic: str, writer_provider: str, writer_model: str, critic_provider: str, critic_model: str, duration: str = "medium", voice_config: str = "edge_tts", voice_style: str = "documentary", aspect_ratio: str = "horizontal"):
     async def event_generator():
         try:
             # Validação do aspect ratio
@@ -855,9 +1017,13 @@ async def create_documentary_stream(topic: str, writer_provider: str, writer_mod
             aspect_info = ASPECT_RATIOS[aspect_ratio]
             resolution = aspect_info["resolutions"][CURRENT_PROFILE]
             
+            voice_info = VOICE_CONFIGS.get(voice_config, VOICE_CONFIGS["edge_tts"])
+            style_info = VOICE_STYLES.get(voice_style, VOICE_STYLES["documentary"])
+            
             yield await send_log(f"🚀 INICIANDO: {topic}")
             yield await send_log(f"📐 Formato: {aspect_info['name']} ({aspect_info['ratio']}) - {resolution[0]}x{resolution[1]}")
-            yield await send_log(f"⚙️ Perfil: {CURRENT_PROFILE} | Voz: {voice_provider}")
+            yield await send_log(f"🎙️ Voz: {voice_info['name']} | Estilo: {style_info['name']}")
+            yield await send_log(f"⚙️ Perfil: {CURRENT_PROFILE}")
 
             pid = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = os.path.join(PROJECTS_DIR, pid)
@@ -873,7 +1039,7 @@ async def create_documentary_stream(topic: str, writer_provider: str, writer_mod
 
             writer_conf = {"provider": writer_provider, "model": writer_model}
             critic_conf = {"provider": critic_provider, "model": critic_model}
-            logger = ProjectLogger(path, topic, writer_conf, critic_conf, duration, voice_provider)
+            logger = ProjectLogger(path, topic, writer_conf, critic_conf, duration, voice_config, voice_style)
 
             viral_brain = ViralBrain(writer_provider, writer_model, critic_provider, critic_model, d_config['constraint'])
             pdf_gen = PDFGenerator()
@@ -917,7 +1083,7 @@ async def create_documentary_stream(topic: str, writer_provider: str, writer_mod
                 for i, scene in enumerate(scenes):
                     yield await send_log(f"   🎥 Cena {i+1}: Produzindo assets...")
 
-                    result = await generate_visuals_and_audio(scene, i, idx, path, voice_provider)
+                    result = await generate_visuals_and_audio(scene, i, idx, path, voice_config, voice_style)
 
                     if isinstance(result, dict) and "error" in result:
                         yield await send_log(f"❌ Erro Assets: {result['error']}")
@@ -1063,6 +1229,44 @@ def get_available_models():
             models["openai"].sort(key=lambda x: x['name'], reverse=True)
         except: pass
     return models
+
+@app.get("/available-voices")
+def get_available_voices():
+    """Retorna vozes e estilos disponíveis"""
+    voices = []
+    
+    # Adiciona vozes disponíveis baseado nas chaves API
+    for key, config in VOICE_CONFIGS.items():
+        # Verifica se a API necessária está disponível
+        available = True
+        if config["provider"] == "openai" and not OPENAI_API_KEY:
+            available = False
+        elif config["provider"] == "elevenlabs" and not ELEVENLABS_API_KEY:
+            available = False
+        elif config["provider"] == "gemini" and not GEMINI_API_KEY:
+            available = False
+        
+        voices.append({
+            "id": key,
+            "name": config["name"],
+            "provider": config["provider"],
+            "description": config["description"],
+            "available": available
+        })
+    
+    # Retorna vozes e estilos
+    styles = []
+    for key, info in VOICE_STYLES.items():
+        styles.append({
+            "id": key,
+            "name": info["name"],
+            "description": info["instruction"][:80] + "..."
+        })
+    
+    return {
+        "voices": voices,
+        "styles": styles
+    }
 
 @app.get("/test-video/{project_id}")
 def test_video(project_id: str):

@@ -17,8 +17,11 @@ export default function MagnateAI() {
   const [criticModel, setCriticModel] = useState("");
   
   const [duration, setDuration] = useState("medium");
-  const [voiceProvider, setVoiceProvider] = useState("no_preference");
-  const [aspectRatio, setAspectRatio] = useState("horizontal"); // ✅ NOVO: Aspect Ratio
+  const [voiceConfig, setVoiceConfig] = useState("edge_tts"); // ✅ Mudado de voiceProvider
+  const [voiceStyle, setVoiceStyle] = useState("documentary"); // ✅ NOVO: Estilo de voz
+  const [aspectRatio, setAspectRatio] = useState("horizontal");
+  
+  const [availableVoices, setAvailableVoices] = useState({ voices: [], styles: [] }); // ✅ NOVO
   
   const logsEndRef = useRef(null);
   const videoRef = useRef(null);
@@ -26,6 +29,11 @@ export default function MagnateAI() {
   useEffect(() => {
     axios.get('http://localhost:8000/available-models')
       .then(res => setAvailableModels(res.data))
+      .catch(err => console.error(err));
+    
+    // ✅ Carrega vozes disponíveis
+    axios.get('http://localhost:8000/available-voices')
+      .then(res => setAvailableVoices(res.data))
       .catch(err => console.error(err));
   }, []);
 
@@ -55,7 +63,7 @@ export default function MagnateAI() {
     setVideoUrl(null);
     setLogs([]);
     
-    const url = `http://localhost:8000/create-stream?topic=${encodeURIComponent(topic)}&writer_provider=${writerProvider}&writer_model=${writerModel}&critic_provider=${criticProvider}&critic_model=${criticModel}&duration=${duration}&voice_provider=${voiceProvider}&aspect_ratio=${aspectRatio}`;
+    const url = `http://localhost:8000/create-stream?topic=${encodeURIComponent(topic)}&writer_provider=${writerProvider}&writer_model=${writerModel}&critic_provider=${criticProvider}&critic_model=${criticModel}&duration=${duration}&voice_config=${voiceConfig}&voice_style=${voiceStyle}&aspect_ratio=${aspectRatio}`;
     
     const eventSource = new EventSource(url);
 
@@ -135,15 +143,34 @@ export default function MagnateAI() {
           </div>
         </div>
 
-        {/* NARRADOR (VOZ) */}
+        {/* NARRADOR (VOZ) - ATUALIZADO */}
         <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
           <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
             <Mic size={14} /> Narrador (Voz)
           </label>
-          <select value={voiceProvider} onChange={(e) => setVoiceProvider(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500">
-            <option value="elevenlabs">ElevenLabs (Premium)</option>
-            <option value="edge_tts">Edge TTS (Gratuito)</option>
-            <option value="no_preference">Sem Preferência (Auto)</option>
+          <select 
+            value={voiceConfig} 
+            onChange={(e) => setVoiceConfig(e.target.value)} 
+            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500 mb-2"
+          >
+            {availableVoices.voices.map(v => (
+              <option key={v.id} value={v.id} disabled={!v.available}>
+                {v.name} {!v.available && '(Chave API ausente)'}
+              </option>
+            ))}
+          </select>
+          
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-2 mt-3">
+            Tom/Estilo
+          </label>
+          <select 
+            value={voiceStyle} 
+            onChange={(e) => setVoiceStyle(e.target.value)} 
+            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500"
+          >
+            {availableVoices.styles.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
           </select>
         </div>
 
