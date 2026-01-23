@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Clapperboard, Loader2, Search, Globe, Film, Bot, BrainCircuit, Cpu, Terminal, Clock, Mic, Download, Monitor, Smartphone } from 'lucide-react'; // ✅ Adicionado Monitor e Smartphone
+import { Clapperboard, Loader2, Search, Globe, Film, Bot, BrainCircuit, Cpu, Terminal, Clock, Mic, Download, Monitor, Smartphone, Image as ImageIcon, Sparkles } from 'lucide-react';
 
 export default function MagnateAI() {
   const [topic, setTopic] = useState("The Rise of NVIDIA");
@@ -17,11 +17,17 @@ export default function MagnateAI() {
   const [criticModel, setCriticModel] = useState("");
   
   const [duration, setDuration] = useState("medium");
-  const [voiceConfig, setVoiceConfig] = useState("edge_tts"); // ✅ Mudado de voiceProvider
-  const [voiceStyle, setVoiceStyle] = useState("documentary"); // ✅ NOVO: Estilo de voz
+  const [voiceConfig, setVoiceConfig] = useState("edge_tts");
+  const [voiceStyle, setVoiceStyle] = useState("documentary");
   const [aspectRatio, setAspectRatio] = useState("horizontal");
   
-  const [availableVoices, setAvailableVoices] = useState({ voices: [], styles: [] }); // ✅ NOVO
+  // ✅ NOVOS ESTADOS PARA IMAGENS
+  const [imageProvider, setImageProvider] = useState("pollinations");
+  const [useConsistentSeed, setUseConsistentSeed] = useState(true);
+  const [visualStyle, setVisualStyle] = useState("documentary");
+  const [availableImageProviders, setAvailableImageProviders] = useState({ providers: [], visual_styles: [] });
+  
+  const [availableVoices, setAvailableVoices] = useState({ voices: [], styles: [] });
   
   const logsEndRef = useRef(null);
   const videoRef = useRef(null);
@@ -31,9 +37,13 @@ export default function MagnateAI() {
       .then(res => setAvailableModels(res.data))
       .catch(err => console.error(err));
     
-    // ✅ Carrega vozes disponíveis
     axios.get('http://localhost:8000/available-voices')
       .then(res => setAvailableVoices(res.data))
+      .catch(err => console.error(err));
+    
+    // ✅ Carrega providers de imagem
+    axios.get('http://localhost:8000/available-image-providers')
+      .then(res => setAvailableImageProviders(res.data))
       .catch(err => console.error(err));
   }, []);
 
@@ -63,7 +73,7 @@ export default function MagnateAI() {
     setVideoUrl(null);
     setLogs([]);
     
-    const url = `http://localhost:8000/create-stream?topic=${encodeURIComponent(topic)}&writer_provider=${writerProvider}&writer_model=${writerModel}&critic_provider=${criticProvider}&critic_model=${criticModel}&duration=${duration}&voice_config=${voiceConfig}&voice_style=${voiceStyle}&aspect_ratio=${aspectRatio}`;
+    const url = `http://localhost:8000/create-stream?topic=${encodeURIComponent(topic)}&writer_provider=${writerProvider}&writer_model=${writerModel}&critic_provider=${criticProvider}&critic_model=${criticModel}&duration=${duration}&voice_config=${voiceConfig}&voice_style=${voiceStyle}&aspect_ratio=${aspectRatio}&image_provider=${imageProvider}&use_consistent_seed=${useConsistentSeed}&visual_style=${visualStyle}`;
     
     const eventSource = new EventSource(url);
 
@@ -110,7 +120,7 @@ export default function MagnateAI() {
           </select>
         </div>
 
-        {/* FORMATO DE TELA - NOVO */}
+        {/* FORMATO DE TELA */}
         <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
           <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
             <Monitor size={14} /> Formato de Tela
@@ -141,6 +151,47 @@ export default function MagnateAI() {
               <div className="text-[10px] opacity-60">16:9 YouTube</div>
             </button>
           </div>
+        </div>
+
+        {/* GERAÇÃO DE IMAGENS - NOVO */}
+        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
+            <ImageIcon size={14} /> Gerador de Imagens
+          </label>
+          <select 
+            value={imageProvider} 
+            onChange={(e) => setImageProvider(e.target.value)} 
+            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500 mb-2"
+          >
+            {availableImageProviders.providers.map(p => (
+              <option key={p.id} value={p.id} disabled={!p.available}>
+                {p.name} - {p.cost} {p.quality} {!p.available && '(API faltando)'}
+              </option>
+            ))}
+          </select>
+          
+          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-2 mt-3">
+            <Sparkles size={14} /> Estilo Visual
+          </label>
+          <select 
+            value={visualStyle} 
+            onChange={(e) => setVisualStyle(e.target.value)} 
+            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500 mb-3"
+          >
+            {availableImageProviders.visual_styles.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={useConsistentSeed} 
+              onChange={(e) => setUseConsistentSeed(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-950 text-emerald-600 focus:ring-emerald-500"
+            />
+            <span className="text-xs text-slate-300">Manter consistência visual (seed fixo)</span>
+          </label>
         </div>
 
         {/* NARRADOR (VOZ) - ATUALIZADO */}

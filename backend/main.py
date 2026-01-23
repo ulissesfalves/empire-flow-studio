@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFont
 from fpdf import FPDF
+import random
 
 # ==========================================
 # OTIMIZAÇÃO #7: CONFIGURAÇÕES GLOBAIS
@@ -187,6 +188,83 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 LUMA_API_KEY = os.getenv("LUMA_API_KEY")
+REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY")  # ✅ NOVO
+
+# --- CONFIGURAÇÕES DE GERAÇÃO DE IMAGENS ---
+IMAGE_PROVIDERS = {
+    "flux_pro": {
+        "name": "Flux Pro (Replicate)",
+        "quality": "⭐⭐⭐⭐⭐",
+        "cost": "$0.055/img",
+        "requires_api": True,
+        "api_key_var": "REPLICATE_API_KEY",
+        "supports_aspect_ratio": True,
+        "supports_seed": True
+    },
+    "dalle3": {
+        "name": "DALL-E 3 (OpenAI)",
+        "quality": "⭐⭐⭐⭐",
+        "cost": "$0.040/img",
+        "requires_api": True,
+        "api_key_var": "OPENAI_API_KEY",
+        "supports_aspect_ratio": False,
+        "supports_seed": False
+    },
+    "sdxl": {
+        "name": "Stable Diffusion XL (Replicate)",
+        "quality": "⭐⭐⭐⭐",
+        "cost": "$0.0025/img",
+        "requires_api": True,
+        "api_key_var": "REPLICATE_API_KEY",
+        "supports_aspect_ratio": True,
+        "supports_seed": True
+    },
+    "banana": {
+        "name": "Nano Banana (Replicate)",
+        "quality": "⭐⭐⭐",
+        "cost": "$0.002/img",
+        "requires_api": True,
+        "api_key_var": "REPLICATE_API_KEY",
+        "supports_aspect_ratio": True,
+        "supports_seed": True
+    },
+    "pollinations": {
+        "name": "Pollinations (Gratuito)",
+        "quality": "⭐⭐",
+        "cost": "Grátis",
+        "requires_api": False,
+        "api_key_var": None,
+        "supports_aspect_ratio": True,
+        "supports_seed": False
+    }
+}
+
+# Template de prompt universal para consistência visual
+VISUAL_STYLE_TEMPLATES = {
+    "documentary": """Cinematic documentary photography, 8k resolution, photorealistic, 
+professional color grading, National Geographic quality, dramatic natural lighting, 
+shallow depth of field, award-winning composition.
+
+SUBJECT: {scene_description}
+
+Style: Professional documentary, no text, no watermarks, highly detailed.""",
+    
+    "cinematic": """Hollywood cinematic shot, IMAX quality, 8k, photorealistic rendering,
+professional cinematography, dramatic lighting, anamorphic lens, film grain,
+color graded like a blockbuster movie.
+
+SUBJECT: {scene_description}
+
+Style: Cinematic masterpiece, no text, ultra detailed, epic composition.""",
+    
+    "photorealistic": """Ultra-realistic photography, 8k RAW, professional DSLR,
+perfect exposure, natural lighting, Leica quality, hyperrealistic details,
+National Geographic award winner.
+
+SUBJECT: {scene_description}
+
+Style: Photorealistic, no CGI, authentic, highly detailed."""
+}
 
 # --- CONFIGURAÇÕES DE VOZ ---
 VOICE_CONFIGS = {
@@ -647,30 +725,114 @@ class SubtitleGenerator:
         return subtitle_clips
 
 # --- API WRAPPERS ---
-def call_gemini_api(prompt_text, model):
+def call_gemini_api(prompt_text, model, max_retries=3):
     if not GEMINI_API_KEY: return {"error": "Chave Gemini não configurada"}
     url = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": prompt_text}]}], "generationConfig": {"temperature": 0.7}}
-    try:
-        r = requests.post(url, headers=headers, json=payload, timeout=60)
-        if r.status_code == 429: return {"error": "ERRO DE COTA (429): Limite do Gemini excedido."}
-        if r.status_code != 200: return {"error": f"Erro Gemini ({r.status_code}): {r.text}"}
-        text = r.json()['candidates'][0]['content']['parts'][0]['text']
-        return {"text": text}
-    except Exception as e: return {"error": str(e)}
+    
+    for attempt in range(max_retries):
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=120)
+            
+            if r.status_code == 429: 
+                return {"error": "ERRO DE COTA (429): Limite do Gemini excedido."}
+            
+            if r.status_code != 200: 
+                return {"error": f"Erro Gemini ({r.status_code}): {r.text}"}
+            
+            # Parse robusto da resposta
+            response_data = r.json()
+            
+            # Verifica se há candidates
+            if 'candidates' not in response_data or not response_data['candidates']:
+                # Pode ser bloqueio de segurança
+                if 'promptFeedback' in response_data:
+                    feedback = response_data['promptFeedback']
+                    block_reason = feedback.get('blockReason', 'UNKNOWN')
+                    return {"error": f"Gemini bloqueou o conteúdo: {block_reason}. Tente outro modelo ou prompt."}
+                return {"error": f"Resposta vazia do Gemini. Response: {response_data}"}
+            
+            # Extrai o texto
+            candidate = response_data['candidates'][0]
+            
+            if 'content' not in candidate:
+                return {"error": f"Candidate sem 'content'. Data: {candidate}"}
+            
+            if 'parts' not in candidate['content']:
+                return {"error": f"Content sem 'parts'. Data: {candidate['content']}"}
+            
+            if not candidate['content']['parts']:
+                return {"error": "Parts vazio"}
+            
+            text = candidate['content']['parts'][0].get('text', '')
+            
+            if not text:
+                return {"error": "Texto vazio na resposta"}
+            
+            return {"text": text}
+        
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                print(f"⚠️ Timeout no Gemini (tentativa {attempt+1}/{max_retries}). Retentando em 2s...")
+                time.sleep(2)
+                continue
+            else:
+                return {"error": f"TIMEOUT: Gemini não respondeu após {max_retries} tentativas (120s cada)."}
+        
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                print(f"⚠️ Erro de conexão Gemini (tentativa {attempt+1}/{max_retries}). Retentando...")
+                time.sleep(2)
+                continue
+            else:
+                return {"error": f"Erro de conexão: {str(e)}"}
+        
+        except KeyError as e:
+            # Erro de parsing - mostra resposta completa para debug
+            return {"error": f"Erro parsing Gemini (campo '{e}' ausente). Response: {r.text[:500]}"}
+        
+        except Exception as e: 
+            return {"error": f"Erro inesperado: {str(e)}"}
+    
+    return {"error": "Falha após todas as tentativas"}
 
-def call_openai_api(prompt_text, model):
+def call_openai_api(prompt_text, model, max_retries=3):
     if not OPENAI_API_KEY: return {"error": "Chave OpenAI não configurada"}
     client = OpenAI(api_key=OPENAI_API_KEY)
-    try:
-        response = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt_text}], temperature=0.7)
-        return {"text": response.choices[0].message.content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "quota" in error_str.lower():
-            return {"error": "ERRO DE COTA (429): Limite da OpenAI excedido."}
-        return {"error": f"Erro OpenAI: {error_str}"}
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model, 
+                messages=[{"role": "user", "content": prompt_text}], 
+                temperature=0.7,
+                timeout=120  # Timeout de 120s
+            )
+            return {"text": response.choices[0].message.content}
+        
+        except Exception as e:
+            error_str = str(e)
+            
+            if "429" in error_str or "quota" in error_str.lower():
+                return {"error": "ERRO DE COTA (429): Limite da OpenAI excedido."}
+            
+            if "timeout" in error_str.lower() or "timed out" in error_str.lower():
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Timeout na OpenAI (tentativa {attempt+1}/{max_retries}). Retentando em 2s...")
+                    time.sleep(2)
+                    continue
+                else:
+                    return {"error": f"TIMEOUT: OpenAI não respondeu após {max_retries} tentativas."}
+            
+            if attempt < max_retries - 1:
+                print(f"⚠️ Erro OpenAI (tentativa {attempt+1}/{max_retries}). Retentando...")
+                time.sleep(2)
+                continue
+            
+            return {"error": f"Erro OpenAI: {error_str}"}
+    
+    return {"error": "Falha após todas as tentativas"}
 
 async def generate_text(provider, model, prompt):
     if provider == "openai": return call_openai_api(prompt, model)
@@ -714,12 +876,42 @@ OUTPUT JSON: {{ "scenes": [ {{ "narration": "English text...", "visual_search_te
                 yield {"type": "error", "content": res_writer['error']}
                 return
 
+            # ==========================================
+            # OTIMIZAÇÃO #3: FALLBACK PARA JSON INVÁLIDO
+            # ==========================================
             try:
                 clean_json = res_writer['text'].replace("```json","").replace("```","").strip()
                 current_draft_json = json.loads(clean_json)
                 script_text = " ".join([s['narration'] for s in current_draft_json.get('scenes', [])])
-            except:
-                yield {"type": "log", "content": "   ⚠️ Erro JSON Roteirista. Retentando..."}
+            except json.JSONDecodeError as json_err:
+                yield {"type": "log", "content": f"   ⚠️ JSON inválido detectado. Tentando corrigir..."}
+                
+                # Tenta corrigir o JSON com o próprio LLM
+                fix_prompt = f"""
+The following text should be valid JSON but has syntax errors. Fix it and return ONLY the corrected JSON, nothing else.
+
+Broken JSON:
+{res_writer['text']}
+
+Return ONLY valid JSON in this exact format:
+{{ "scenes": [ {{ "narration": "text", "visual_search_term": "keyword", "visual_ai_prompt": "prompt" }} ] }}
+"""
+                
+                try:
+                    res_fix = await generate_text(self.writer_provider, self.writer_model, fix_prompt)
+                    if 'error' not in res_fix:
+                        fixed_json = res_fix['text'].replace("```json","").replace("```","").strip()
+                        current_draft_json = json.loads(fixed_json)
+                        script_text = " ".join([s['narration'] for s in current_draft_json.get('scenes', [])])
+                        yield {"type": "log", "content": "   ✅ JSON corrigido com sucesso!"}
+                    else:
+                        yield {"type": "log", "content": "   ⚠️ Falha ao corrigir JSON. Retentando..."}
+                        continue
+                except:
+                    yield {"type": "log", "content": "   ⚠️ Falha ao corrigir JSON. Retentando..."}
+                    continue
+            except Exception as e:
+                yield {"type": "log", "content": f"   ⚠️ Erro inesperado ao processar JSON: {str(e)[:50]}. Retentando..."}
                 continue
 
             yield {"type": "log", "content": f"   🧐 Crítico ({self.critic_model}): Avaliando..."}
@@ -752,13 +944,179 @@ Output JSON: {{ "score": (0-100), "feedback": "Fix instructions." }}
                     yield {"type": "log", "content": "   ✅ APROVADO PELO CRÍTICO!"}
                     yield {"type": "result", "content": current_draft_json}
                     return
-            except: pass
+            except:
+                # Se o crítico também retornar JSON inválido, assume score mediano
+                yield {"type": "log", "content": "   ⚠️ Resposta do crítico inválida. Assumindo score 75..."}
+                score = 75
+                feedback = "Continue melhorando a retenção e estrutura viral."
 
         yield {"type": "log", "content": "   ⚠️ Usando melhor versão disponível."}
         yield {"type": "result", "content": current_draft_json}
 
-# --- GERAÇÃO DE MÍDIA ---
-async def generate_visuals_and_audio(scene, index, act_index, project_path, voice_config_key, voice_style):
+# --- GERAÇÃO DE IMAGENS ---
+async def generate_image_with_provider(prompt, provider, aspect_ratio, seed=None, style_template="documentary"):
+    """
+    Gera imagem usando o provider especificado
+    
+    Args:
+        prompt: Descrição da cena
+        provider: flux_pro, dalle3, sdxl, banana, pollinations
+        aspect_ratio: vertical ou horizontal
+        seed: Seed para consistência (opcional)
+        style_template: documentary, cinematic, photorealistic
+    
+    Returns:
+        tuple: (image_path, provider_used) ou dict com error
+    """
+    
+    # Valida provider
+    if provider not in IMAGE_PROVIDERS:
+        return {"error": f"Provider inválido: {provider}"}
+    
+    config = IMAGE_PROVIDERS[provider]
+    
+    # Verifica API key se necessário
+    if config["requires_api"]:
+        api_key_var = config["api_key_var"]
+        if api_key_var == "OPENAI_API_KEY" and not OPENAI_API_KEY:
+            return {"error": f"❌ ERRO CRÍTICO: {provider} selecionado mas OPENAI_API_KEY não configurada. Configure no .env ou troque o provider."}
+        elif api_key_var == "REPLICATE_API_KEY" and not REPLICATE_API_KEY:
+            return {"error": f"❌ ERRO CRÍTICO: {provider} selecionado mas REPLICATE_API_KEY não configurada. Configure no .env ou troque o provider."}
+        
+        if api_key_var == "REPLICATE_API_KEY":
+            os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_KEY
+    
+    # Aplica template de estilo
+    template = VISUAL_STYLE_TEMPLATES.get(style_template, VISUAL_STYLE_TEMPLATES["documentary"])
+    enhanced_prompt = template.format(scene_description=prompt)
+    
+    # Determina aspect ratio
+    aspect = "9:16" if aspect_ratio == "vertical" else "16:9"
+    width = 720 if aspect_ratio == "vertical" else 1280
+    height = 1280 if aspect_ratio == "vertical" else 720
+    
+    try:
+        # ===== FLUX PRO =====
+        if provider == "flux_pro":
+            import replicate
+            
+            input_params = {
+                "prompt": enhanced_prompt,
+                "aspect_ratio": aspect,
+                "output_format": "png",
+                "output_quality": 100,
+                "safety_tolerance": 2
+            }
+            
+            if seed is not None and config["supports_seed"]:
+                input_params["seed"] = seed
+            
+            output = replicate.run(
+                "black-forest-labs/flux-pro",
+                input=input_params
+            )
+            
+            # Download da imagem
+            # CORREÇÃO: Tratamento para objeto FileOutput do Replicate
+            if isinstance(output, list):
+                image_url = str(output[0])
+            else:
+                image_url = str(output) # Converte FileOutput diretamente para URL
+            
+            image_data = requests.get(image_url, timeout=30).content
+            
+            return image_data, "Flux Pro"
+        
+        # ===== STABLE DIFFUSION XL =====
+        elif provider == "sdxl":
+            import replicate
+            
+            input_params = {
+                "prompt": enhanced_prompt,
+                "width": width,
+                "height": height,
+                "num_outputs": 1,
+                "scheduler": "K_EULER",
+                "num_inference_steps": 50,
+                "guidance_scale": 7.5,
+                "refine": "expert_ensemble_refiner"
+            }
+            
+            if seed is not None and config["supports_seed"]:
+                input_params["seed"] = seed
+            
+            output = replicate.run(
+                "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+                input=input_params
+            )
+            
+            image_url = output[0] if isinstance(output, list) else output
+            image_data = requests.get(image_url, timeout=30).content
+            
+            return image_data, "SDXL"
+        
+        # ===== BANANA (Nano model) =====
+        elif provider == "banana":
+            import replicate
+            
+            input_params = {
+                "prompt": enhanced_prompt,
+                "width": width,
+                "height": height,
+                "num_outputs": 1
+            }
+            
+            if seed is not None and config["supports_seed"]:
+                input_params["seed"] = seed
+            
+            output = replicate.run(
+                "fofr/sdxl-neon-mecha:c3c9c5f0e4ed4a8c876f15f2af7c4b5f46f12b2fd0dd69a0d54e2d0b6e3e9c0e",
+                input=input_params
+            )
+            
+            image_url = output[0] if isinstance(output, list) else output
+            image_data = requests.get(image_url, timeout=30).content
+            
+            return image_data, "Nano Banana"
+        
+        # ===== DALL-E 3 =====
+        elif provider == "dalle3":
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            
+            # DALL-E 3 não suporta seed ou aspect ratio custom
+            size = "1024x1792" if aspect_ratio == "vertical" else "1792x1024"
+            
+            response = client.images.generate(
+                model="dall-e-3",
+                prompt=enhanced_prompt[:4000],  # DALL-E tem limite de caracteres
+                size=size,
+                quality="hd",
+                n=1
+            )
+            
+            image_url = response.data[0].url
+            image_data = requests.get(image_url, timeout=30).content
+            
+            return image_data, "DALL-E 3"
+        
+        # ===== POLLINATIONS =====
+        elif provider == "pollinations":
+            url = f"https://image.pollinations.ai/prompt/{enhanced_prompt.replace(' ','%20')}?width={width}&height={height}&model=flux&nologo=true"
+            
+            image_data = requests.get(url, timeout=30).content
+            
+            return image_data, "Pollinations"
+    
+    except Exception as e:
+        error_msg = str(e)
+        
+        # Detecta erros específicos
+        if "credit" in error_msg.lower() or "quota" in error_msg.lower() or "billing" in error_msg.lower():
+            return {"error": f"❌ ERRO CRÍTICO: Créditos esgotados no {config['name']}. Adicione créditos ou troque o provider."}
+        
+        return {"error": f"Erro ao gerar imagem com {config['name']}: {error_msg}"}
+    
+    return {"error": f"Provider {provider} não implementado corretamente"}
     narr_text = scene.get('narration') or scene.get('script') or scene.get('text')
     if not narr_text: return None
     
@@ -884,28 +1242,150 @@ async def generate_visuals_and_audio(scene, index, act_index, project_path, voic
         except Exception as e:
             return {"error": f"FALHA TOTAL DE VOZ: {str(e)}"}
     
-    # Geração de imagem (permanece igual)
-    search_term = scene.get('visual_search_term', 'business')
+# --- GERAÇÃO DE MÍDIA ---
+async def generate_visuals_and_audio(scene, index, act_index, project_path, voice_config_key, voice_style, image_provider, project_seed, visual_style):
+    narr_text = scene.get('narration') or scene.get('script') or scene.get('text')
+    if not narr_text: return None
+    
+    audio_path = os.path.join(project_path, f"act{act_index}_scene{index}.mp3")
+    clean_txt = clean_text_for_tts(narr_text)
+    
+    # Obtém configurações de voz e estilo
+    voice_config = VOICE_CONFIGS.get(voice_config_key, VOICE_CONFIGS["edge_tts"])
+    style_config = VOICE_STYLES.get(voice_style, VOICE_STYLES["documentary"])
+    
+    # Adiciona instrução de estilo ao texto (para TTS que suportam)
+    styled_prompt = f"{style_config['instruction']}\n\n{clean_txt}"
+    
+    tts_model_used = "None"
+    provider = voice_config["provider"]
+    
+    # ===== GERAÇÃO DE ÁUDIO (mantém lógica original) =====
+    if provider == "openai":
+        if not OPENAI_API_KEY:
+            return {"error": "ERRO VOZ: OpenAI TTS selecionado mas sem chave API."}
+        
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            
+            response = client.audio.speech.create(
+                model="tts-1-hd",
+                voice=voice_config["voice"],
+                input=clean_txt,
+                speed=style_config["speed"]
+            )
+            
+            response.stream_to_file(audio_path)
+            tts_model_used = f"OpenAI TTS ({voice_config['voice']})"
+        
+        except Exception as e:
+            return {"error": f"FALHA OpenAI TTS: {str(e)}"}
+    
+    elif provider == "elevenlabs":
+        if not ELEVENLABS_API_KEY:
+            return {"error": "ERRO VOZ: ElevenLabs selecionado mas sem chave API."}
+        
+        try:
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+            headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
+            
+            data = {
+                "text": clean_txt,
+                "model_id": "eleven_turbo_v2",
+                "voice_settings": {
+                    "stability": 0.5 if voice_style == "hype" else 0.75,
+                    "similarity_boost": 0.75
+                }
+            }
+            
+            r = requests.post(url, json=data, headers=headers, timeout=20)
+            
+            if r.status_code == 200:
+                with open(audio_path, 'wb') as f: f.write(r.content)
+                tts_model_used = "ElevenLabs"
+            else:
+                return {"error": f"ElevenLabs Error ({r.status_code}): {r.text}"}
+        
+        except Exception as e:
+            return {"error": f"FALHA ElevenLabs: {str(e)}"}
+    
+    elif provider == "gemini":
+        if not GEMINI_API_KEY:
+            return {"error": "ERRO VOZ: Gemini TTS selecionado mas sem chave API."}
+        
+        try:
+            url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={GEMINI_API_KEY}"
+            headers = {"Content-Type": "application/json"}
+            
+            payload = {
+                "input": {"text": clean_txt},
+                "voice": {
+                    "languageCode": "en-US",
+                    "name": voice_config["voice"],
+                    "ssmlGender": "MALE"
+                },
+                "audioConfig": {
+                    "audioEncoding": "MP3",
+                    "speakingRate": style_config["speed"],
+                    "pitch": float(style_config["pitch"].replace("Hz", ""))
+                }
+            }
+            
+            r = requests.post(url, json=payload, headers=headers, timeout=20)
+            
+            if r.status_code == 200:
+                import base64
+                audio_content = base64.b64decode(r.json()["audioContent"])
+                with open(audio_path, 'wb') as f: f.write(audio_content)
+                tts_model_used = "Gemini TTS"
+            else:
+                await edge_tts.Communicate(clean_txt, "en-US-ChristopherNeural").save(audio_path)
+                tts_model_used = "EdgeTTS (Fallback)"
+        
+        except Exception as e:
+            await edge_tts.Communicate(clean_txt, "en-US-ChristopherNeural").save(audio_path)
+            tts_model_used = "EdgeTTS (Fallback)"
+    
+    else:
+        try:
+            if voice_style == "hype":
+                ssml_text = f'<speak><prosody rate="fast">{clean_txt}</prosody></speak>'
+            elif voice_style == "asmr":
+                ssml_text = f'<speak><prosody rate="slow" volume="soft">{clean_txt}</prosody></speak>'
+            else:
+                ssml_text = clean_txt
+            
+            await edge_tts.Communicate(ssml_text, voice_config["voice"]).save(audio_path)
+            tts_model_used = "EdgeTTS"
+        except Exception as e:
+            return {"error": f"FALHA TOTAL DE VOZ: {str(e)}"}
+    
+    # ===== GERAÇÃO DE IMAGEM (NOVO SISTEMA) =====
+    search_term = scene.get('visual_search_term', 'business concept')
     ai_prompt = scene.get('visual_ai_prompt', search_term)
     media_path = os.path.join(project_path, f"act{act_index}_media{index}.png")
-
-    vis_source = "Pollinations"
+    
     if not os.path.exists(media_path):
-        success = False
-        if OPENAI_API_KEY:
-            try:
-                client = OpenAI(api_key=OPENAI_API_KEY)
-                resp = client.images.generate(model="dall-e-3", prompt=ai_prompt+", cinematic, 8k", size="1024x1024", quality="hd")
-                with open(media_path, 'wb') as f: f.write(requests.get(resp.data[0].url).content)
-                success = True
-                vis_source = "DALL-E 3"
-            except: pass
-        if not success:
-            u = f"https://image.pollinations.ai/prompt/{search_term.replace(' ','%20')}?width=1280&height=720&model=flux"
-            try:
-                r = requests.get(u)
-                with open(media_path, 'wb') as f: f.write(r.content)
-            except: pass
+        # Usa o provider selecionado pelo usuário
+        result = await generate_image_with_provider(
+            prompt=ai_prompt,
+            provider=image_provider,
+            aspect_ratio="vertical" if "vertical" in project_path else "horizontal",
+            seed=project_seed,
+            style_template=visual_style
+        )
+        
+        # Verifica se houve erro crítico
+        if isinstance(result, dict) and "error" in result:
+            return result  # Retorna erro para parar a execução
+        
+        # Salva imagem
+        image_data, vis_source = result
+        with open(media_path, 'wb') as f:
+            f.write(image_data)
+    else:
+        vis_source = "Cache"
 
     return audio_path, media_path, tts_model_used, vis_source
 
@@ -1006,13 +1486,47 @@ def render_scene_optimized(audio_path, media_path, output_path, aspect_ratio="ho
 
 # --- STREAMING ---
 @app.get("/create-stream")
-async def create_documentary_stream(topic: str, writer_provider: str, writer_model: str, critic_provider: str, critic_model: str, duration: str = "medium", voice_config: str = "edge_tts", voice_style: str = "documentary", aspect_ratio: str = "horizontal"):
+async def create_documentary_stream(
+    topic: str, 
+    writer_provider: str, 
+    writer_model: str, 
+    critic_provider: str, 
+    critic_model: str, 
+    duration: str = "medium", 
+    voice_config: str = "edge_tts", 
+    voice_style: str = "documentary", 
+    aspect_ratio: str = "horizontal",
+    image_provider: str = "pollinations",
+    use_consistent_seed: bool = True,
+    visual_style: str = "documentary"
+):
     async def event_generator():
         try:
             # Validação do aspect ratio
             if aspect_ratio not in ASPECT_RATIOS:
                 yield f"data: {json.dumps({'status': 'error', 'message': f'Aspect ratio inválido: {aspect_ratio}'})}\n\n"
                 return
+            
+            # Validação do image provider
+            if image_provider not in IMAGE_PROVIDERS:
+                yield f"data: {json.dumps({'status': 'error', 'message': f'Image provider inválido: {image_provider}'})}\n\n"
+                return
+            
+            # Verifica se provider requer API key
+            provider_config = IMAGE_PROVIDERS[image_provider]
+            if provider_config["requires_api"]:
+                api_key_var = provider_config["api_key_var"]
+                if api_key_var == "OPENAI_API_KEY" and not OPENAI_API_KEY:
+                    error_msg = f'{provider_config["name"]} requer OPENAI_API_KEY no .env'
+                    yield f"data: {json.dumps({'status': 'error', 'message': error_msg})}\n\n"
+                    return
+                elif api_key_var == "REPLICATE_API_KEY" and not REPLICATE_API_KEY:
+                    error_msg = f'{provider_config["name"]} requer REPLICATE_API_KEY no .env'
+                    yield f"data: {json.dumps({'status': 'error', 'message': error_msg})}\n\n"
+                    return
+            
+            # Gera seed único para o projeto (se consistência habilitada)
+            project_seed = random.randint(1000, 99999) if use_consistent_seed else None
             
             aspect_info = ASPECT_RATIOS[aspect_ratio]
             resolution = aspect_info["resolutions"][CURRENT_PROFILE]
@@ -1023,6 +1537,8 @@ async def create_documentary_stream(topic: str, writer_provider: str, writer_mod
             yield await send_log(f"🚀 INICIANDO: {topic}")
             yield await send_log(f"📐 Formato: {aspect_info['name']} ({aspect_info['ratio']}) - {resolution[0]}x{resolution[1]}")
             yield await send_log(f"🎙️ Voz: {voice_info['name']} | Estilo: {style_info['name']}")
+            yield await send_log(f"🎨 Imagens: {provider_config['name']} | Seed: {project_seed if use_consistent_seed else 'Desabilitado'}")
+            yield await send_log(f"🖼️ Estilo Visual: {visual_style.capitalize()}")
             yield await send_log(f"⚙️ Perfil: {CURRENT_PROFILE}")
 
             pid = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1083,7 +1599,7 @@ async def create_documentary_stream(topic: str, writer_provider: str, writer_mod
                 for i, scene in enumerate(scenes):
                     yield await send_log(f"   🎥 Cena {i+1}: Produzindo assets...")
 
-                    result = await generate_visuals_and_audio(scene, i, idx, path, voice_config, voice_style)
+                    result = await generate_visuals_and_audio(scene, i, idx, path, voice_config, voice_style, image_provider, project_seed, visual_style)
 
                     if isinstance(result, dict) and "error" in result:
                         yield await send_log(f"❌ Erro Assets: {result['error']}")
@@ -1266,6 +1782,44 @@ def get_available_voices():
     return {
         "voices": voices,
         "styles": styles
+    }
+
+@app.get("/available-image-providers")
+def get_available_image_providers():
+    """Retorna providers de imagem disponíveis"""
+    providers = []
+    
+    for key, config in IMAGE_PROVIDERS.items():
+        available = True
+        api_status = "Não requer API"
+        
+        if config["requires_api"]:
+            api_key_var = config["api_key_var"]
+            if api_key_var == "OPENAI_API_KEY":
+                available = bool(OPENAI_API_KEY)
+                api_status = "✅ Configurado" if available else "❌ Faltando OPENAI_API_KEY"
+            elif api_key_var == "REPLICATE_API_KEY":
+                available = bool(REPLICATE_API_KEY)
+                api_status = "✅ Configurado" if available else "❌ Faltando REPLICATE_API_KEY"
+        
+        providers.append({
+            "id": key,
+            "name": config["name"],
+            "quality": config["quality"],
+            "cost": config["cost"],
+            "supports_seed": config["supports_seed"],
+            "supports_aspect_ratio": config["supports_aspect_ratio"],
+            "available": available,
+            "api_status": api_status
+        })
+    
+    return {
+        "providers": providers,
+        "visual_styles": [
+            {"id": "documentary", "name": "Documentary", "description": "National Geographic quality, professional"},
+            {"id": "cinematic", "name": "Cinematic", "description": "Hollywood blockbuster style, dramatic"},
+            {"id": "photorealistic", "name": "Photorealistic", "description": "Ultra-realistic DSLR photography"}
+        ]
     }
 
 @app.get("/test-video/{project_id}")
