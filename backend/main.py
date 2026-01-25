@@ -840,118 +840,330 @@ async def generate_text(provider, model, prompt):
 
 # --- CÉREBRO VIRAL ---
 class ViralBrain:
-    def __init__(self, writer_provider, writer_model, critic_provider, critic_model, duration_instruction):
+    def __init__(
+        self,
+        writer_provider,
+        writer_model,
+        critic_provider,
+        critic_model,
+        duration,
+        d_config
+    ):
         self.writer_provider = writer_provider
         self.writer_model = writer_model
         self.critic_provider = critic_provider
         self.critic_model = critic_model
-        self.duration_instruction = duration_instruction
+        self.duration = duration if duration in ["short", "medium", "long"] else "medium"
+        self.d_config = d_config
 
+    # --------------------------------------------------
+    # WRITER PROMPT (ALGORITMO-FIRST)
+    # --------------------------------------------------
+    def _build_writer_prompt(self, topic, chapter_title, facts, feedback):
+        structure_context = f"""
+VIDEO STRUCTURE:
+{self.d_config.get('structure', '')}
+
+HARD CONSTRAINTS:
+{self.d_config.get('constraint', '')}
+"""
+
+        # ================= SHORT =================
+        if self.duration == "short":
+            base_prompt = f"""
+Role: Viral YouTube Shorts Scriptwriter (Finance Niche).
+
+PRIMARY GOAL:
+Force the viewer to stop scrolling and watch until the end.
+
+ALGORITHMIC RULES:
+- First line MUST feel dangerous, unfair, or shocking.
+- Speak directly to the viewer using "you".
+- No teaching tone. No motivational tone.
+- Short, sharp sentences.
+- Every line must increase tension.
+- End MUST loop back mentally to the first line.
+
+PSYCHOLOGICAL ANGLES (use at least one):
+- Fear of falling behind
+- Comparison with others
+- System is rigged
+- Hidden advantage others are using
+
+ABSOLUTELY AVOID:
+- Generic advice
+- LinkedIn-style phrases
+- Neutral explanations
+"""
+
+        # ================= MEDIUM =================
+        elif self.duration == "medium":
+            base_prompt = f"""
+Role: Elite YouTube Retention Architect (Finance, Power & Hidden Systems)
+
+PRIMARY OBJECTIVE:
+Maximize Average View Duration and Session Time.
+
+CORE STRATEGY:
+Write a progressive revelation story.
+Each minute must unlock a new layer of understanding.
+
+MANDATORY STRUCTURE:
+0-10s — Shocked specific hook (concrete relatable situation + contradiction)
+0:10-0:40 — Clearly promise what the viewer will understand by the end
+Minute 1-2 — Reveal first hidden mechanism
+Minute 2-4 — Reveal how this mechanism is intentionally optimized
+Minute 4-6 — Reveal who benefits and how money is extracted
+Final Minute — Disturbing reframe of the viewer's life
+
+ALGORITHMIC RULES:
+- Introduce a NEW insight every 30-45 seconds
+- Short paragraphs
+- Vary sentence length
+- Occasional rhetorical questions
+- Tie abstract ideas to everyday behaviors
+
+TONE:
+Dark. Calm. Surgical.
+Never poetic. Never vague.
+
+ABSOLUTELY AVOID:
+- Repeating the same idea
+- Long atmospheric buildup
+- Philosophical wandering
+- Pure motivation
+"""
+
+        # ================= LONG =================
+        else:
+            base_prompt = f"""
+Role: Investigative Financial Documentary Scriptwriter (YouTube).
+
+PRIMARY GOAL:
+Sustain deep attention through tension, not education.
+
+NARRATIVE RULES:
+- Frame the topic as a hidden system affecting the viewer.
+- Introduce stakes early: who wins, who loses.
+- Reveal incentives slowly.
+- Show how most people misunderstand this.
+- End by projecting consequences into the future.
+
+ALGORITHMIC RULES:
+- Assume an intelligent but unaware audience.
+- No hype, no motivation.
+- Depth, tension, and inevitability.
+- Viewer should feel uneasy by the end.
+
+ABSOLUTELY AVOID:
+- Feel-good endings
+- Clear instructions
+- Over-explaining
+"""
+
+        return f"""
+{base_prompt}
+
+TOPIC:
+{topic}
+
+CHAPTER:
+{chapter_title}
+
+FACTUAL CONTEXT (use selectively, do not dump):
+{facts}
+
+PREVIOUS CRITIC FEEDBACK TO FIX:
+{feedback}
+
+{structure_context}
+
+OUTPUT REQUIREMENTS:
+- VALID JSON ONLY
+- NO markdown
+- NO explanations
+
+FORMAT:
+{{ "scenes": [
+    {{
+        "narration": "English narration text",
+        "visual_search_term": "concise visual keyword",
+        "visual_ai_prompt": "dark, cinematic, finance-related visual prompt"
+    }}
+] }}
+"""
+
+    # --------------------------------------------------
+    # CRITIC PROMPT (ALGORITHM SIMULATOR)
+    # --------------------------------------------------
+    def _build_critic_prompt(self, script_text):
+
+        # ================= SHORT =================
+        if self.duration == "short":
+            base_prompt = """
+    Role: YouTube Shorts Retention Engineer
+
+    OBJECTIVE:
+    Predict if this Short can exceed:
+    - 85% retention
+    - Strong rewatches
+
+    EVALUATE BASED ON:
+    - Scroll-stopping first line
+    - Shock or unfairness
+    - Escalation every line
+    - Open loop strength
+    - Rewatch trigger
+
+    AUTOMATIC FAIL IF:
+    - Any soft intro
+    - Teaching tone
+    - More than one idea
+    - No loop ending
+    """
+
+        # ================= MEDIUM =================
+        elif self.duration == "medium":
+            base_prompt = """
+    Role: YouTube Mid-Length Retention Engineer
+
+    OBJECTIVE:
+    Predict if this video can reach:
+    - 40%+ retention at 3 minutes
+    - High Average View Duration
+    - Strong session continuation
+
+    EVALUATE BASED ON:
+    - Specific hook
+    - Clear promised payoff
+    - New insight every 30–45 seconds
+    - Forward narrative momentum
+    - Mechanisms explained through examples
+    - Share-trigger potential
+
+    AUTOMATIC FAIL IF:
+    - Same idea repeated
+    - No explicit promise early
+    - Vague abstract language
+    - Emotional with no mechanism
+    """
+
+        # ================= LONG =================
+        else:
+            base_prompt = """
+    Role: YouTube Long-Form Retention Engineer
+
+    OBJECTIVE:
+    Predict if this documentary can:
+    - Sustain deep attention
+    - Increase session time
+    - Drive binge behavior
+
+    EVALUATE BASED ON:
+    - Stakes introduced early
+    - Layered revelations
+    - Cause-and-effect logic
+    - Escalating consequences
+    - Uneasy ending
+
+    AUTOMATIC FAIL IF:
+    - Pure narration without mechanism
+    - Slow first minute
+    - Feels educational
+    - Clean or hopeful ending
+    """
+
+        return f"""
+    {base_prompt}
+
+    SCRIPT:
+    \"\"\"{script_text}\"\"\"
+
+    OUTPUT JSON ONLY:
+    {{ 
+    "score": 0-100,
+    "fatal_flaws": ["short bullet list"],
+    "retention_risk_timestamp": "mm:ss",
+    "fix_instructions": "Concrete rewrite instructions"
+    }}
+    """
+
+
+    # --------------------------------------------------
+    # MAIN LOOP (ASYNC GENERATOR)
+    # --------------------------------------------------
     async def run_writer_critic_loop(self, topic, chapter_title, facts, logger):
         max_iterations = 3
-        current_draft_json = None
-        feedback = f"Focus on high retention. {self.duration_instruction}"
+        feedback = "Increase tension, discomfort, and retention."
+        best_draft = None
 
         for i in range(max_iterations):
-            yield {"type": "log", "content": f"   ✍️ Roteirista ({self.writer_model}) - Draft {i+1}..."}
-            logger.log_event("roteiro_draft", "in_progress", {"round": i+1, "model": self.writer_model})
+            yield {"type": "log", "content": f"✍️ Writer draft {i+1}"}
 
-            writer_prompt = f"""
-Role: World-Class YouTube Scriptwriter.
-Topic: {topic}. Chapter: {chapter_title}.
-Context Data: {facts}
+            writer_prompt = self._build_writer_prompt(
+                topic, chapter_title, facts, feedback
+            )
 
-CRITICAL CONSTRAINTS:
-1. LANGUAGE: ENGLISH ONLY. NEVER TRANSLATE.
-2. FORMAT: VALID JSON ONLY.
-3. DURATION: {self.duration_instruction}
+            res_writer = await generate_text(
+                self.writer_provider,
+                self.writer_model,
+                writer_prompt
+            )
 
-Critique Feedback to fix: {feedback}
-
-OUTPUT JSON: {{ "scenes": [ {{ "narration": "English text...", "visual_search_term": "English keyword", "visual_ai_prompt": "English prompt" }} ] }}
-"""
-
-            res_writer = await generate_text(self.writer_provider, self.writer_model, writer_prompt)
-            if 'error' in res_writer:
-                yield {"type": "error", "content": res_writer['error']}
-                return
-
-            # ==========================================
-            # OTIMIZAÇÃO #3: FALLBACK PARA JSON INVÁLIDO
-            # ==========================================
             try:
-                clean_json = res_writer['text'].replace("```json","").replace("```","").strip()
-                current_draft_json = json.loads(clean_json)
-                script_text = " ".join([s['narration'] for s in current_draft_json.get('scenes', [])])
-            except json.JSONDecodeError as json_err:
-                yield {"type": "log", "content": f"   ⚠️ JSON inválido detectado. Tentando corrigir..."}
-                
-                # Tenta corrigir o JSON com o próprio LLM
-                fix_prompt = f"""
-The following text should be valid JSON but has syntax errors. Fix it and return ONLY the corrected JSON, nothing else.
-
-Broken JSON:
-{res_writer['text']}
-
-Return ONLY valid JSON in this exact format:
-{{ "scenes": [ {{ "narration": "text", "visual_search_term": "keyword", "visual_ai_prompt": "prompt" }} ] }}
-"""
-                
-                try:
-                    res_fix = await generate_text(self.writer_provider, self.writer_model, fix_prompt)
-                    if 'error' not in res_fix:
-                        fixed_json = res_fix['text'].replace("```json","").replace("```","").strip()
-                        current_draft_json = json.loads(fixed_json)
-                        script_text = " ".join([s['narration'] for s in current_draft_json.get('scenes', [])])
-                        yield {"type": "log", "content": "   ✅ JSON corrigido com sucesso!"}
-                    else:
-                        yield {"type": "log", "content": "   ⚠️ Falha ao corrigir JSON. Retentando..."}
-                        continue
-                except:
-                    yield {"type": "log", "content": "   ⚠️ Falha ao corrigir JSON. Retentando..."}
-                    continue
-            except Exception as e:
-                yield {"type": "log", "content": f"   ⚠️ Erro inesperado ao processar JSON: {str(e)[:50]}. Retentando..."}
+                clean = res_writer["text"].strip()
+                draft = json.loads(clean)
+                script_text = " ".join(
+                    scene["narration"] for scene in draft.get("scenes", [])
+                )
+                best_draft = draft
+            except:
                 continue
 
-            yield {"type": "log", "content": f"   🧐 Crítico ({self.critic_model}): Avaliando..."}
+            yield {"type": "log", "content": "🧐 Critic simulating algorithm response..."}
 
-            critic_prompt = f"""
-Role: Ruthless YouTube Consultant.
-Script: "{script_text}"
+            critic_prompt = self._build_critic_prompt(script_text)
 
-TASK: Check retention and constraints.
-CRITICAL CHECK: IS THE SCRIPT IN ENGLISH? IF NOT, SCORE 0.
-
-Output JSON: {{ "score": (0-100), "feedback": "Fix instructions." }}
-"""
-
-            res_critic = await generate_text(self.critic_provider, self.critic_model, critic_prompt)
-            if 'error' in res_critic:
-                yield {"type": "error", "content": res_critic['error']}
-                return
+            res_critic = await generate_text(
+                self.critic_provider,
+                self.critic_model,
+                critic_prompt
+            )
 
             try:
-                clean_critic = res_critic['text'].replace("```json","").replace("```","").strip()
-                critic_data = json.loads(clean_critic)
-                score = critic_data.get('score', 50)
-                feedback = critic_data.get('feedback', '')
+                critic = json.loads(res_critic["text"].strip())
+                score = critic.get("score", 0)
 
-                yield {"type": "log", "content": f"   📊 Nota: {score}/100. Feedback: {feedback[:50]}..."}
-                logger.log_event("critico_resultado", "completed", {"round": i+1, "score": score})
+                fatal_flaws = critic.get("fatal_flaws", [])
+                risk_time = critic.get("retention_risk_timestamp", "")
+                fix = critic.get("fix_instructions", "")
+
+                feedback = f"""
+                FATAL FLAWS:
+                {fatal_flaws}
+
+                RETENTION DROP AT:
+                {risk_time}
+
+                FIX INSTRUCTIONS:
+                {fix}
+                """
+
+
+                yield {
+                    "type": "log",
+                    "content": f"📊 Algorithm Score: {score}/100"
+                }
 
                 if score >= 90:
-                    yield {"type": "log", "content": "   ✅ APROVADO PELO CRÍTICO!"}
-                    yield {"type": "result", "content": current_draft_json}
+                    yield {"type": "result", "content": best_draft}
                     return
             except:
-                # Se o crítico também retornar JSON inválido, assume score mediano
-                yield {"type": "log", "content": "   ⚠️ Resposta do crítico inválida. Assumindo score 75..."}
-                score = 75
-                feedback = "Continue melhorando a retenção e estrutura viral."
+                feedback = "Make it sharper, darker, and more uncomfortable."
 
-        yield {"type": "log", "content": "   ⚠️ Usando melhor versão disponível."}
-        yield {"type": "result", "content": current_draft_json}
+        yield {"type": "result", "content": best_draft}
+
+
 
 # --- GERAÇÃO DE IMAGENS ---
 async def generate_image_with_provider(prompt, provider, aspect_ratio, seed=None, style_template="documentary"):
@@ -1250,11 +1462,22 @@ async def generate_visuals_and_audio(scene, index, act_index, project_path, voic
     audio_path = os.path.join(project_path, f"act{act_index}_scene{index}.mp3")
     clean_txt = clean_text_for_tts(narr_text)
     
-    # Obtém configurações de voz e estilo
-    voice_config = VOICE_CONFIGS.get(voice_config_key, VOICE_CONFIGS["edge_tts"])
+    # --- LÓGICA DE SELEÇÃO DE VOZ ATUALIZADA ---
+    if voice_config_key.startswith("el_dyn_"):
+        # É uma voz dinâmica do ElevenLabs
+        real_voice_id = voice_config_key.replace("el_dyn_", "")
+        voice_config = {
+            "provider": "elevenlabs",
+            "voice": real_voice_id, # ID real da API
+            "name": "ElevenLabs Dynamic"
+        }
+    else:
+        # É um preset (OpenAI, Edge, ou preset ElevenLabs do .env)
+        voice_config = VOICE_CONFIGS.get(voice_config_key, VOICE_CONFIGS["edge_tts"])
+
     style_config = VOICE_STYLES.get(voice_style, VOICE_STYLES["documentary"])
     
-    # Adiciona instrução de estilo ao texto (para TTS que suportam)
+    # Adiciona instrução de estilo
     styled_prompt = f"{style_config['instruction']}\n\n{clean_txt}"
     
     tts_model_used = "None"
@@ -1282,17 +1505,23 @@ async def generate_visuals_and_audio(scene, index, act_index, project_path, voic
         except Exception as e:
             return {"error": f"FALHA OpenAI TTS: {str(e)}"}
     
-    elif provider == "elevenlabs":
+# ===== ELEVENLABS (ATUALIZADO) =====
+    if provider == "elevenlabs": # Alterei de elif para if para facilitar a leitura aqui, mas mantenha a cadeia elif
         if not ELEVENLABS_API_KEY:
             return {"error": "ERRO VOZ: ElevenLabs selecionado mas sem chave API."}
         
         try:
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+            # Decide qual Voice ID usar: O dinâmico ou o do .env
+            target_voice_id = voice_config.get("voice")
+            if not target_voice_id:
+                target_voice_id = ELEVENLABS_VOICE_ID # Fallback para o .env se for o preset antigo
+            
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{target_voice_id}"
             headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
             
             data = {
                 "text": clean_txt,
-                "model_id": "eleven_turbo_v2",
+                "model_id": "eleven_turbo_v2", # Ou "eleven_multilingual_v2" se preferir
                 "voice_settings": {
                     "stability": 0.5 if voice_style == "hype" else 0.75,
                     "similarity_boost": 0.75
@@ -1303,7 +1532,7 @@ async def generate_visuals_and_audio(scene, index, act_index, project_path, voic
             
             if r.status_code == 200:
                 with open(audio_path, 'wb') as f: f.write(r.content)
-                tts_model_used = "ElevenLabs"
+                tts_model_used = f"ElevenLabs ({target_voice_id})"
             else:
                 return {"error": f"ElevenLabs Error ({r.status_code}): {r.text}"}
         
@@ -1557,7 +1786,7 @@ async def create_documentary_stream(
             critic_conf = {"provider": critic_provider, "model": critic_model}
             logger = ProjectLogger(path, topic, writer_conf, critic_conf, duration, voice_config, voice_style)
 
-            viral_brain = ViralBrain(writer_provider, writer_model, critic_provider, critic_model, d_config['constraint'])
+            viral_brain = ViralBrain(writer_provider, writer_model, critic_provider, critic_model, duration, d_config)
             pdf_gen = PDFGenerator()
 
             yield await send_log("🕵️ Pesquisando dados...")
@@ -1597,6 +1826,9 @@ async def create_documentary_stream(
                 scenes = plan.get('scenes', [])
 
                 for i, scene in enumerate(scenes):
+                    # --- CORREÇÃO: PING PARA O NAVEGADOR NÃO DESCONECTAR ---
+                    yield f": keep-alive\n\n"
+
                     yield await send_log(f"   🎥 Cena {i+1}: Produzindo assets...")
 
                     result = await generate_visuals_and_audio(scene, i, idx, path, voice_config, voice_style, image_provider, project_seed, visual_style)
@@ -1649,9 +1881,53 @@ async def create_documentary_stream(
 
             if generated_files:
                 yield await send_log(f"🧵 Costurando {len(generated_files)} cenas...")
-                output_name = "final_viral.mp4"
-                output_path = os.path.join(path, output_name)
                 
+                # ==============================================================
+                # 🧠 GERAÇÃO DE TÍTULO VIRAL AUTOMÁTICO
+                # ==============================================================
+                yield await send_log("🧠 Criando nome viral para o arquivo...")
+                
+                try:
+                    # Pega o começo do roteiro para contexto
+                    preview_text = full_script_data[0]['scenes'][0].get('narration', '')[:200]
+                    
+                    filename_prompt = f"""
+ROLE: Viral YouTube Packaging Expert.
+TASK: Create a clickable, high-CTR filename for a video about: "{topic}".
+CONTEXT: The video starts with: "{preview_text}..."
+
+RULES:
+1. MAX 6 words.
+2. Use underscores (_) instead of spaces.
+3. NO special characters (only letters, numbers, underscores).
+4. NO file extension in output (I will add .mp4).
+5. Must be catchy/intriguing.
+
+Example Input: "Inflation history"
+Example Output: The_Silent_Money_Killer
+
+OUTPUT ONLY THE STRING:
+"""
+                    # Usa o mesmo writer configurado para manter consistência
+                    title_res = await generate_text(writer_provider, writer_model, filename_prompt)
+                    
+                    # Limpeza do resultado (remove aspas, espaços, quebras de linha)
+                    raw_title = title_res.get('text', 'viral_video').strip().replace('"', '').replace("'", "")
+                    # Remove qualquer caractere que não seja letra, número ou underscore
+                    safe_title = re.sub(r'[^a-zA-Z0-9_]', '', raw_title.replace(" ", "_"))
+                    
+                    if not safe_title: safe_title = "final_viral"
+                    output_name = f"{safe_title}.mp4"
+                    
+                    yield await send_log(f"🏷️ Nome escolhido: {output_name}")
+                    
+                except Exception as e:
+                    print(f"Erro ao gerar título: {e}")
+                    output_name = "final_viral.mp4" # Fallback em caso de erro
+
+                output_path = os.path.join(path, output_name)
+                # ==============================================================
+
                 success = stitch_video_files(generated_files, output_path)
                 
                 if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
@@ -1748,16 +2024,17 @@ def get_available_models():
 
 @app.get("/available-voices")
 def get_available_voices():
-    """Retorna vozes e estilos disponíveis"""
+    """Retorna vozes e estilos disponíveis (Incluindo dinâmicas do ElevenLabs)"""
     voices = []
     
-    # Adiciona vozes disponíveis baseado nas chaves API
+    # 1. Adiciona vozes PRESETS (Hardcoded no VOICE_CONFIGS)
     for key, config in VOICE_CONFIGS.items():
-        # Verifica se a API necessária está disponível
+        # Pula a opção genérica "ElevenLabs (Premium)" se quisermos apenas as específicas
+        if key == "elevenlabs":
+            continue
+
         available = True
         if config["provider"] == "openai" and not OPENAI_API_KEY:
-            available = False
-        elif config["provider"] == "elevenlabs" and not ELEVENLABS_API_KEY:
             available = False
         elif config["provider"] == "gemini" and not GEMINI_API_KEY:
             available = False
@@ -1769,8 +2046,73 @@ def get_available_voices():
             "description": config["description"],
             "available": available
         })
+
+    # 2. Adiciona vozes DINÂMICAS do ElevenLabs (Busca da API)
+    if ELEVENLABS_API_KEY:
+        try:
+            print("🔍 Buscando vozes na ElevenLabs...")
+            url = "https://api.elevenlabs.io/v1/voices" 
+            headers = {"xi-api-key": ELEVENLABS_API_KEY}
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                eleven_voices = data.get('voices', [])
+                
+                print(f"✅ ElevenLabs retornou {len(eleven_voices)} vozes.")
+                
+                # Ordena por nome
+                eleven_voices.sort(key=lambda x: x.get('name', ''))
+
+                # Lista de IDs de vozes populares/principais para priorizar (opcional)
+                # Se quiser TODAS, basta remover esse filtro ou lógica de prioridade.
+                # Aqui vamos pegar as 20 primeiras para não poluir demais o dropdown se houver centenas.
+                for i, v in enumerate(eleven_voices):
+                    if i > 30: break # Limite de segurança para não quebrar o frontend
+                    
+                    category = v.get('category', 'generated')
+                    name = v.get('name', 'Unknown')
+                    voice_id = v.get('voice_id')
+                    
+                    voices.append({
+                        "id": f"el_dyn_{voice_id}", 
+                        "name": f"{name} (ElevenLabs)",
+                        "provider": "elevenlabs",
+                        "description": f"Category: {category}",
+                        "available": True
+                    })
+            else:
+                print(f"⚠️ Erro ElevenLabs API: {response.status_code} - {response.text}")
+                # Fallback: Adiciona a opção genérica se a API falhar
+                voices.append({
+                    "id": "elevenlabs",
+                    "name": "ElevenLabs (Default)",
+                    "provider": "elevenlabs",
+                    "description": "Voz padrão configurada no .env",
+                    "available": True
+                })
+
+        except Exception as e:
+            print(f"❌ Erro ao buscar vozes ElevenLabs: {e}")
+            # Fallback em caso de erro de conexão
+            voices.append({
+                "id": "elevenlabs",
+                "name": "ElevenLabs (Default)",
+                "provider": "elevenlabs",
+                "description": "Voz padrão configurada no .env",
+                "available": True
+            })
+    else:
+        # Se não tiver chave, adiciona como indisponível para o usuário saber
+        voices.append({
+            "id": "elevenlabs",
+            "name": "ElevenLabs (API Key Missing)",
+            "provider": "elevenlabs",
+            "description": "Configure ELEVENLABS_API_KEY no .env",
+            "available": False
+        })
     
-    # Retorna vozes e estilos
+    # Retorna estilos (mantém igual)
     styles = []
     for key, info in VOICE_STYLES.items():
         styles.append({
