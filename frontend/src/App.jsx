@@ -1,50 +1,200 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Clapperboard, Loader2, Search, Globe, Film, Bot, BrainCircuit, Cpu, Terminal, Clock, Mic, Download, Monitor, Smartphone, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { 
+  Play, StopCircle, Activity, Layers, Cpu, Film, 
+  Mic, Brain, Type as TypeIcon, Smartphone, Monitor, 
+  Terminal as TerminalIcon, Image as ImageIcon, 
+  Download, RefreshCw, FileText, CheckCircle2, Sparkles 
+} from 'lucide-react';
 
-export default function MagnateAI() {
-  const [topic, setTopic] = useState("The Rise of NVIDIA");
-  const [status, setStatus] = useState('idle');
-  const [videoUrl, setVideoUrl] = useState(null);
-  const [logs, setLogs] = useState([]);
-  
-  const [availableModels, setAvailableModels] = useState({ gemini: [], openai: [] });
-  
-  const [writerProvider, setWriterProvider] = useState("gemini");
-  const [writerModel, setWriterModel] = useState("");
-  
-  const [criticProvider, setCriticProvider] = useState("gemini");
-  const [criticModel, setCriticModel] = useState("");
-  
-  const [duration, setDuration] = useState("medium");
-  const [voiceConfig, setVoiceConfig] = useState("edge_tts");
-  const [voiceStyle, setVoiceStyle] = useState("documentary");
-  const [aspectRatio, setAspectRatio] = useState("horizontal");
-  
-  // ✅ NOVOS ESTADOS PARA IMAGENS
-  const [imageProvider, setImageProvider] = useState("pollinations");
-  const [useConsistentSeed, setUseConsistentSeed] = useState(true);
-  const [visualStyle, setVisualStyle] = useState("documentary");
-  const [availableImageProviders, setAvailableImageProviders] = useState({ providers: [], visual_styles: [] });
-  
-  const [availableVoices, setAvailableVoices] = useState({ voices: [], styles: [] });
-  
-  const logsEndRef = useRef(null);
-  const videoRef = useRef(null);
+// --- SUB-COMPONENT: TERMINAL (LOGS DO SISTEMA) ---
+const Terminal = ({ logs }) => {
+  const endRef = useRef(null);
 
   useEffect(() => {
-    axios.get('http://localhost:8000/available-models')
-      .then(res => setAvailableModels(res.data))
-      .catch(err => console.error(err));
-    
-    axios.get('http://localhost:8000/available-voices')
-      .then(res => setAvailableVoices(res.data))
-      .catch(err => console.error(err));
-    
-    // ✅ Carrega providers de imagem
-    axios.get('http://localhost:8000/available-image-providers')
-      .then(res => setAvailableImageProviders(res.data))
-      .catch(err => console.error(err));
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  return (
+    <div className="h-full bg-slate-950 rounded-xl border border-slate-800 flex flex-col overflow-hidden font-mono text-xs shadow-inner">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900/50">
+        <div className="flex items-center gap-2 text-slate-400">
+          <TerminalIcon size={14} />
+          <span className="font-semibold tracking-wider">SYSTEM LOGS // STREAM</span>
+        </div>
+        <div className="flex gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/50"></div>
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/50"></div>
+          <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/50"></div>
+        </div>
+      </div>
+      <div className="flex-1 p-4 overflow-y-auto custom-scrollbar space-y-1.5">
+        {logs.length === 0 && (
+          <span className="text-slate-600 italic">Waiting for process initiation...</span>
+        )}
+        {logs.map((log, i) => (
+          <div key={i} className={`break-words ${
+            log.includes('ERRO') || log.includes('❌') ? 'text-red-400' : 
+            log.includes('✅') || log.includes('🎉') ? 'text-emerald-400' : 
+            log.includes('🎬') || log.includes('🎥') ? 'text-purple-400' :
+            log.includes('🧠') ? 'text-blue-400' :
+            'text-slate-300'
+          }`}>
+            <span className="opacity-30 mr-2">[{new Date().toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'})}]</span>
+            {log}
+          </div>
+        ))}
+        <div ref={endRef} />
+      </div>
+    </div>
+  );
+};
+
+// --- SUB-COMPONENT: LIVE CONTEXT (PREVIEW + SEO) ---
+const ScriptView = ({ status, logs, youtubeMetadata }) => {
+  const isGenerating = status === 'streaming';
+  
+  const meaningfulLogs = logs.filter(l => 
+    l.includes("Ato") || 
+    l.includes("Cena") || 
+    l.includes("Nota:") ||
+    l.includes("Salvando como")
+  );
+
+  return (
+    <div className="h-full bg-slate-900/40 rounded-xl border border-slate-800 flex flex-col overflow-hidden relative backdrop-blur-sm">
+      <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+        <h2 className="text-sm font-bold flex items-center gap-2 text-slate-200">
+          <FileText size={16} className="text-purple-500" /> Live Pipeline Context
+        </h2>
+        {isGenerating && (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 animate-pulse font-mono">
+            PROCESSING
+          </span>
+        )}
+      </div>
+      
+      <div className="flex-1 p-4 overflow-y-auto custom-scrollbar space-y-4">
+        {status === 'idle' && !youtubeMetadata ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-40 gap-3">
+            <Brain size={48} />
+            <p className="text-sm">AI Brain is waiting for input...</p>
+          </div>
+        ) : (
+          <>
+             <div className="space-y-2">
+                {meaningfulLogs.length === 0 && !youtubeMetadata && (
+                  <div className="flex flex-col items-center justify-center h-20 text-slate-500 gap-2">
+                    <RefreshCw className="animate-spin" size={20} />
+                    <span className="text-xs">Initializing Neural Networks...</span>
+                  </div>
+                )}
+                {meaningfulLogs.map((l, idx) => (
+                   <div key={idx} className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/50 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                     <div className="flex gap-3">
+                       <div className="mt-1">
+                         {l.includes("Ato") ? <Film size={14} className="text-purple-400"/> : 
+                          l.includes("Cena") ? <ImageIcon size={14} className="text-blue-400"/> :
+                          l.includes("Nota") ? <Activity size={14} className="text-yellow-400"/> :
+                          <CheckCircle2 size={14} className="text-emerald-400"/>}
+                       </div>
+                       <p className="text-sm text-slate-300 font-medium leading-relaxed">{l.replace(/^> /, '')}</p>
+                     </div>
+                   </div>
+                ))}
+             </div>
+
+             {youtubeMetadata && (
+               <div className="mt-6 border-t border-slate-700 pt-4 animate-in zoom-in-95 duration-500">
+                 <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-emerald-500/30 rounded-xl p-4 shadow-lg">
+                   <div className="flex items-center gap-2 mb-4 text-emerald-400">
+                     <Sparkles size={16} />
+                     <h3 className="text-xs font-bold uppercase tracking-wider">YouTube Optimization Ready</h3>
+                   </div>
+                   
+                   <div className="space-y-4">
+                     <div>
+                       <label className="text-[10px] uppercase text-slate-500 font-bold block mb-1">Title</label>
+                       <div className="bg-black/30 p-2 rounded border border-slate-800 text-sm text-white font-medium select-all">
+                         {/* CORREÇÃO: Garantindo que o título seja exibido mesmo se for um objeto ou estiver vazio */}
+                         {typeof youtubeMetadata.title === 'object' ? JSON.stringify(youtubeMetadata.title) : (youtubeMetadata.title || "Untitled Video")}
+                       </div>
+                     </div>
+                     
+                     <div>
+                       <label className="text-[10px] uppercase text-slate-500 font-bold block mb-1">Description</label>
+                       <div className="bg-black/30 p-2 rounded border border-slate-800 text-xs text-slate-300 whitespace-pre-wrap select-all">
+                         {youtubeMetadata.description}
+                       </div>
+                     </div>
+
+                     <div>
+                        <label className="text-[10px] uppercase text-slate-500 font-bold block mb-1">Tags (Copy & Paste)</label>
+                        <div className="bg-black/30 p-2 rounded border border-slate-800 text-xs text-slate-400 font-mono select-all hover:border-emerald-500/50 transition-colors cursor-text">
+                          {/* CORREÇÃO: Lógica para garantir tags separadas por vírgula e sem "object Object" */}
+                          {Array.isArray(youtubeMetadata.tags) 
+                            ? youtubeMetadata.tags.join(', ') 
+                            : String(youtubeMetadata.tags || '').replace(/[\[\]"]/g, '').split(',').map(t => t.trim()).filter(t => t).join(', ')
+                          }
+                        </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- APP PRINCIPAL ---
+export default function MagnateAI() {
+  const [status, setStatus] = useState('idle');
+  const [logs, setLogs] = useState([]);
+  const [videoUrl, setVideoUrl] = useState(null);
+  const eventSourceRef = useRef(null);
+  const [youtubeMetadata, setYoutubeMetadata] = useState(null);
+
+  const [topic, setTopic] = useState("The hidden history of Bitcoin and its impact on modern finance");
+  const [duration, setDuration] = useState("medium");
+  const [availableModels, setAvailableModels] = useState({ gemini: [], openai: [] });
+  const [writerProvider, setWriterProvider] = useState("gemini");
+  const [writerModel, setWriterModel] = useState("");
+  const [criticProvider, setCriticProvider] = useState("gemini");
+  const [criticModel, setCriticModel] = useState("");
+  const [availableVoices, setAvailableVoices] = useState({ voices: [], styles: [] });
+  const [voiceConfig, setVoiceConfig] = useState("");
+  const [voiceStyle, setVoiceStyle] = useState("documentary");
+  const [availableImageProviders, setAvailableImageProviders] = useState({ providers: [], visual_styles: [] });
+  const [imageProvider, setImageProvider] = useState("pollinations");
+  const [visualStyle, setVisualStyle] = useState("documentary");
+  const [aspectRatio, setAspectRatio] = useState("horizontal");
+  const [useConsistentSeed, setUseConsistentSeed] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [modelsRes, voicesRes, imagesRes] = await Promise.all([
+          axios.get('http://localhost:8000/available-models'),
+          axios.get('http://localhost:8000/available-voices'),
+          axios.get('http://localhost:8000/available-image-providers')
+        ]);
+        setAvailableModels(modelsRes.data);
+        if (modelsRes.data.gemini?.length) {
+          setWriterModel(modelsRes.data.gemini[0].id);
+          setCriticModel(modelsRes.data.gemini[0].id);
+        }
+        setAvailableVoices(voicesRes.data);
+        if (voicesRes.data.voices?.length) setVoiceConfig(voicesRes.data.voices[0].id);
+        setAvailableImageProviders(imagesRes.data);
+      } catch (err) {
+        console.error("Erro ao conectar com backend:", err);
+        setLogs(prev => [...prev, "❌ Error connecting to backend. Is main.py running?"]);
+      }
+    };
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -57,254 +207,342 @@ export default function MagnateAI() {
     if (list.length > 0) setCriticModel(list[0].id);
   }, [criticProvider, availableModels]);
 
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
-
-  // ✅ Força reload do vídeo quando URL muda
-  useEffect(() => {
-    if (videoUrl && videoRef.current) {
-      videoRef.current.load();
-    }
-  }, [videoUrl]);
-
-  const handleCreateStream = () => {
+  const handleIgnite = () => {
+    if (!topic.trim()) return;
     setStatus('streaming');
     setVideoUrl(null);
     setLogs([]);
-    
-    const url = `http://localhost:8000/create-stream?topic=${encodeURIComponent(topic)}&writer_provider=${writerProvider}&writer_model=${writerModel}&critic_provider=${criticProvider}&critic_model=${criticModel}&duration=${duration}&voice_config=${voiceConfig}&voice_style=${voiceStyle}&aspect_ratio=${aspectRatio}&image_provider=${imageProvider}&use_consistent_seed=${useConsistentSeed}&visual_style=${visualStyle}`;
-    
-    const eventSource = new EventSource(url);
+    setYoutubeMetadata(null);
+    if (eventSourceRef.current) eventSourceRef.current.close();
 
-    eventSource.onmessage = (event) => {
+    const params = new URLSearchParams({
+      topic,
+      writer_provider: writerProvider,
+      writer_model: writerModel,
+      critic_provider: criticProvider,
+      critic_model: criticModel,
+      duration,
+      voice_config: voiceConfig,
+      voice_style: voiceStyle,
+      aspect_ratio: aspectRatio,
+      image_provider: imageProvider,
+      use_consistent_seed: useConsistentSeed,
+      visual_style: visualStyle
+    });
+
+    const url = `http://localhost:8000/create-stream?${params.toString()}`;
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      if (event.data.startsWith(":")) return;
       const data = JSON.parse(event.data);
-      if (data.log) setLogs(prev => [...prev, `> ${data.log}`]);
+      if (data.youtube_metadata) setYoutubeMetadata(data.youtube_metadata);
+      if (data.log) setLogs(prev => [...prev, data.log]);
       if (data.status === 'done') {
-        console.log('✅ Vídeo pronto:', data.url); // ✅ Debug
         setVideoUrl(data.url);
         setStatus('done');
-        eventSource.close();
+        es.close();
       }
       if (data.status === 'error') {
         setStatus('error');
-        setLogs(prev => [...prev, `🛑 ERRO: ${data.message}`]);
-        eventSource.close();
+        setLogs(prev => [...prev, `🛑 FATAL ERROR: ${data.message}`]);
+        es.close();
       }
     };
-    
-    eventSource.onerror = (err) => {
-      console.error('❌ EventSource error:', err);
-      eventSource.close();
+
+    es.onerror = (err) => {
+      es.close();
+      if (status !== 'done') setStatus('error');
     };
   };
 
+  const handleAbort = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      setLogs(prev => [...prev, "🛑 Sequence Aborted by User."]);
+      setStatus('idle');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col md:flex-row">
-      <div className="w-full md:w-1/3 p-6 border-r border-slate-800 flex flex-col gap-6 bg-slate-900 overflow-y-auto">
-        <div className="flex items-center gap-3 text-emerald-500">
-          <Globe size={28} />
-          <h1 className="text-2xl font-bold tracking-tighter text-white">MAGNATE <span className="text-emerald-500">STUDIO</span></h1>
-        </div>
-
-        {/* DURAÇÃO */}
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
-            <Clock size={14} /> Duração do Vídeo
-          </label>
-          <select value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500">
-            <option value="short">⚡ Curto (Shorts/TikTok - 30s)</option>
-            <option value="medium">📺 Médio (Padrão YouTube - 3min)</option>
-            <option value="long">📽️ Longo (Documentário - 10min+)</option>
-            <option value="surprise">🎲 Surpreenda-me (IA Decide)</option>
-          </select>
-        </div>
-
-        {/* FORMATO DE TELA */}
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
-            <Monitor size={14} /> Formato de Tela
-          </label>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setAspectRatio('vertical')} 
-              className={`flex-1 py-3 rounded-lg text-xs font-bold border transition-all ${
-                aspectRatio === 'vertical' 
-                  ? 'bg-purple-600 text-white border-purple-500' 
-                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600'
-              }`}
-            >
-              <Smartphone size={16} className="mx-auto mb-1" />
-              <div>Vertical</div>
-              <div className="text-[10px] opacity-60">9:16 Shorts</div>
-            </button>
-            <button 
-              onClick={() => setAspectRatio('horizontal')} 
-              className={`flex-1 py-3 rounded-lg text-xs font-bold border transition-all ${
-                aspectRatio === 'horizontal' 
-                  ? 'bg-blue-600 text-white border-blue-500' 
-                  : 'bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600'
-              }`}
-            >
-              <Monitor size={16} className="mx-auto mb-1" />
-              <div>Horizontal</div>
-              <div className="text-[10px] opacity-60">16:9 YouTube</div>
-            </button>
+    <div className="flex h-screen w-full bg-slate-950 text-slate-100 font-sans selection:bg-purple-500/30 overflow-hidden">
+      <div className="w-80 border-r border-slate-800 bg-slate-900/50 flex flex-col p-5 z-20 shadow-2xl overflow-y-auto custom-scrollbar backdrop-blur-md">
+        <div className="flex items-center gap-3 mb-8 flex-shrink-0">
+          <div className="p-2 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg shadow-[0_0_15px_rgba(147,51,234,0.5)]">
+            <Cpu size={24} className="text-white" />
+          </div>
+          <div>
+            <h1 className="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">ViralFlow AI</h1>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Automated Engine</p>
           </div>
         </div>
 
-        {/* GERAÇÃO DE IMAGENS - NOVO */}
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
-            <ImageIcon size={14} /> Gerador de Imagens
-          </label>
-          <select 
-            value={imageProvider} 
-            onChange={(e) => setImageProvider(e.target.value)} 
-            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500 mb-2"
-          >
-            {availableImageProviders.providers.map(p => (
-              <option key={p.id} value={p.id} disabled={!p.available}>
-                {p.name} - {p.cost} {p.quality} {!p.available && '(API faltando)'}
-              </option>
-            ))}
-          </select>
-          
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-2 mt-3">
-            <Sparkles size={14} /> Estilo Visual
-          </label>
-          <select 
-            value={visualStyle} 
-            onChange={(e) => setVisualStyle(e.target.value)} 
-            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500 mb-3"
-          >
-            {availableImageProviders.visual_styles.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={useConsistentSeed} 
-              onChange={(e) => setUseConsistentSeed(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-600 bg-slate-950 text-emerald-600 focus:ring-emerald-500"
+        <div className="space-y-6 flex-1">
+          <div className="group">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block group-hover:text-purple-400 transition-colors">
+              Content Strategy
+            </label>
+            <textarea
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all resize-none h-24 mb-2 placeholder:text-slate-600 shadow-inner"
+              placeholder="Enter your viral topic..."
+              disabled={status === 'streaming'}
             />
-            <span className="text-xs text-slate-300">Manter consistência visual (seed fixo)</span>
-          </label>
-        </div>
-
-        {/* NARRADOR (VOZ) - ATUALIZADO */}
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-3">
-            <Mic size={14} /> Narrador (Voz)
-          </label>
-          <select 
-            value={voiceConfig} 
-            onChange={(e) => setVoiceConfig(e.target.value)} 
-            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500 mb-2"
-          >
-            {availableVoices.voices.map(v => (
-              <option key={v.id} value={v.id} disabled={!v.available}>
-                {v.name} {!v.available && '(Chave API ausente)'}
-              </option>
-            ))}
-          </select>
-          
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 mb-2 mt-3">
-            Tom/Estilo
-          </label>
-          <select 
-            value={voiceStyle} 
-            onChange={(e) => setVoiceStyle(e.target.value)} 
-            className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm outline-none focus:border-emerald-500"
-          >
-            {availableVoices.styles.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* ROTEIRISTA */}
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <label className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2 mb-3">
-            <Bot size={14} /> Roteirista (Criativo)
-          </label>
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => setWriterProvider('gemini')} className={`flex-1 py-1 rounded text-xs font-bold border ${writerProvider === 'gemini' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Gemini</button>
-            <button onClick={() => setWriterProvider('openai')} className={`flex-1 py-1 rounded text-xs font-bold border ${writerProvider === 'openai' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400'}`}>OpenAI</button>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              disabled={status === 'streaming'}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-purple-500 outline-none shadow-sm"
+            >
+              <option value="short">⚡ Short (30s - High Pace)</option>
+              <option value="medium">📺 Medium (3m - Standard)</option>
+              <option value="long">📽️ Long (10m+ - Deep Dive)</option>
+              <option value="surprise">🎲 Auto-Optimize</option>
+            </select>
           </div>
-          <select value={writerModel} onChange={(e) => setWriterModel(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm">
-            {availableModels[writerProvider]?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </div>
 
-        {/* CRÍTICO */}
-        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-          <label className="text-xs font-bold text-red-400 uppercase flex items-center gap-2 mb-3">
-            <BrainCircuit size={14} /> Crítico (Analítico)
-          </label>
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => setCriticProvider('gemini')} className={`flex-1 py-1 rounded text-xs font-bold border ${criticProvider === 'gemini' ? 'bg-red-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Gemini</button>
-            <button onClick={() => setCriticProvider('openai')} className={`flex-1 py-1 rounded text-xs font-bold border ${criticProvider === 'openai' ? 'bg-red-600 text-white' : 'bg-slate-900 text-slate-400'}`}>OpenAI</button>
+          <div className="group">
+             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block flex items-center gap-1 group-hover:text-purple-400 transition-colors">
+              <Brain size={12} /> Intelligence Models
+            </label>
+            <div className="mb-3">
+                <span className="text-[10px] text-slate-400 font-semibold mb-1 block flex justify-between">
+                    <span>Script Writer</span>
+                    <span className="text-[9px] opacity-50 bg-slate-800 px-1 rounded">CREATIVE</span>
+                </span>
+                <div className="flex gap-1 mb-1">
+                   {['gemini', 'openai'].map(p => (
+                     <button 
+                       key={p} 
+                       onClick={() => setWriterProvider(p)}
+                       disabled={status === 'streaming'}
+                       className={`flex-1 text-[9px] uppercase font-bold py-1.5 rounded border transition-all ${writerProvider === p ? 'bg-purple-600 border-purple-500 text-white shadow-md' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-600'}`}
+                     >{p}</button>
+                   ))}
+                </div>
+                <select 
+                  value={writerModel} onChange={(e) => setWriterModel(e.target.value)}
+                  disabled={status === 'streaming'}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none"
+                >
+                  {availableModels[writerProvider]?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+            </div>
+
+            <div>
+                <span className="text-[10px] text-slate-400 font-semibold mb-1 block flex justify-between">
+                    <span>Viral Critic</span>
+                    <span className="text-[9px] opacity-50 bg-slate-800 px-1 rounded">ANALYTICAL</span>
+                </span>
+                <div className="flex gap-1 mb-1">
+                   {['gemini', 'openai'].map(p => (
+                     <button 
+                       key={p} 
+                       onClick={() => setCriticProvider(p)}
+                       disabled={status === 'streaming'}
+                       className={`flex-1 text-[9px] uppercase font-bold py-1.5 rounded border transition-all ${criticProvider === p ? 'bg-red-600 border-red-500 text-white shadow-md' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-600'}`}
+                     >{p}</button>
+                   ))}
+                </div>
+                <select 
+                  value={criticModel} onChange={(e) => setCriticModel(e.target.value)}
+                  disabled={status === 'streaming'}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none"
+                >
+                  {availableModels[criticProvider]?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+            </div>
           </div>
-          <select value={criticModel} onChange={(e) => setCriticModel(e.target.value)} className="w-full bg-slate-950 text-white p-2 rounded border border-slate-600 text-sm">
-            {availableModels[criticProvider]?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </div>
 
-        <div className="flex-1 flex flex-col gap-4">
-          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-            <Search size={14} /> Tópico Viral
-          </label>
-          <textarea value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full h-32 bg-slate-950 p-4 rounded-lg border border-slate-700 text-white focus:border-emerald-500 outline-none resize-none text-lg font-medium" />
-          
-          <button onClick={handleCreateStream} disabled={status === 'streaming'} className={`w-full font-bold py-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-lg ${status === 'streaming' ? 'bg-slate-700 cursor-wait text-slate-300' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
-            {status === 'streaming' ? <><Loader2 className="animate-spin" /> BATALHANDO...</> : <><Film size={20} /> INICIAR PRODUÇÃO</>}
-          </button>
-        </div>
+          <div className="group">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block flex items-center gap-1 group-hover:text-purple-400 transition-colors">
+              <ImageIcon size={12} /> Visual Engine
+            </label>
+            <div className="space-y-2">
+              <select 
+                value={imageProvider} onChange={(e) => setImageProvider(e.target.value)}
+                disabled={status === 'streaming'}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none"
+              >
+                {availableImageProviders.providers.map(p => (
+                  <option key={p.id} value={p.id} disabled={!p.available}>
+                    {p.name} {p.cost !== "Grátis" ? '($)' : ''}
+                  </option>
+                ))}
+              </select>
+              
+              <div className="grid grid-cols-2 gap-2">
+                 <button
+                    onClick={() => setAspectRatio('vertical')}
+                    disabled={status === 'streaming'}
+                    className={`flex items-center justify-center gap-1.5 p-2 rounded text-[10px] font-bold border transition-all ${aspectRatio === 'vertical' ? 'bg-purple-500/10 border-purple-500 text-purple-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}
+                  >
+                    <Smartphone size={12} /> 9:16
+                  </button>
+                  <button
+                    onClick={() => setAspectRatio('horizontal')}
+                    disabled={status === 'streaming'}
+                    className={`flex items-center justify-center gap-1.5 p-2 rounded text-[10px] font-bold border transition-all ${aspectRatio === 'horizontal' ? 'bg-blue-500/10 border-blue-500 text-blue-400' : 'bg-slate-950 border-slate-800 text-slate-500'}`}
+                  >
+                    <Monitor size={12} /> 16:9
+                  </button>
+              </div>
 
-        <div className="bg-black rounded-lg p-4 font-mono text-xs text-green-400 border border-slate-800 h-48 overflow-hidden flex flex-col">
-          <div className="flex items-center gap-2 text-slate-500 border-b border-slate-800 pb-2 mb-2"><Terminal size={12} /> LOGS</div>
-          <div className="overflow-y-auto flex-1 scrollbar-hide">
-            {logs.map((log, i) => <div key={i} className="mb-1 break-words">{log}</div>)}
-            <div ref={logsEndRef} />
+              <select 
+                value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)}
+                disabled={status === 'streaming'}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none"
+              >
+                {availableImageProviders.visual_styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+
+              <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-900 rounded">
+                <input 
+                  type="checkbox" 
+                  checked={useConsistentSeed} 
+                  onChange={(e) => setUseConsistentSeed(e.target.checked)}
+                  disabled={status === 'streaming'}
+                  className="w-3 h-3 rounded border-slate-600 bg-slate-950 text-purple-600 focus:ring-purple-500"
+                />
+                <div className="flex items-center gap-1 text-[10px] text-slate-300">
+                    <Sparkles size={10} className="text-yellow-500" />
+                    <span>Consistent Characters (Fixed Seed)</span>
+                </div>
+              </label>
+            </div>
           </div>
+
+          <div className="group">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block flex items-center gap-1 group-hover:text-purple-400 transition-colors">
+              <Mic size={12} /> Audio & Voice
+            </label>
+            <div className="space-y-2">
+              <select 
+                value={voiceConfig} onChange={(e) => setVoiceConfig(e.target.value)}
+                disabled={status === 'streaming'}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none"
+              >
+                {availableVoices.voices.map(v => (
+                  <option key={v.id} value={v.id} disabled={!v.available}>{v.name}</option>
+                ))}
+              </select>
+              <select 
+                value={voiceStyle} onChange={(e) => setVoiceStyle(e.target.value)}
+                disabled={status === 'streaming'}
+                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none"
+              >
+                {availableVoices.styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-slate-800 flex-shrink-0">
+          {status === 'idle' || status === 'done' || status === 'error' ? (
+            <button
+              onClick={handleIgnite}
+              className="w-full group relative flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3.5 rounded-lg font-bold hover:shadow-[0_0_20px_rgba(147,51,234,0.4)] transition-all duration-300 active:scale-95"
+            >
+              <Play size={18} className="fill-white group-hover:scale-110 transition-transform" />
+              <span>IGNITE ENGINE</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleAbort}
+              className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 border border-red-500/30 py-3.5 rounded-lg font-bold hover:bg-red-500/20 transition-all active:scale-95"
+            >
+              <StopCircle size={18} />
+              <span>ABORT SEQUENCE</span>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 p-10 bg-black flex flex-col items-center justify-center relative">
-        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{backgroundImage: 'radial-gradient(circle, #333 1px, transparent 1px)', backgroundSize: '30px 30px'}}></div>
-        {!videoUrl ? (
-          <div className="text-center opacity-30 flex flex-col items-center">
-            <Clapperboard size={64} className="mb-4" />
-            <h2 className="text-2xl font-bold">{status === 'streaming' ? 'PRODUZINDO...' : 'AGUARDANDO'}</h2>
+      <div className="flex-1 flex flex-col min-h-0 bg-black relative">
+        <div className="absolute inset-0 opacity-20 pointer-events-none" 
+             style={{backgroundImage: 'radial-gradient(circle, #1e293b 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+
+        <header className="h-14 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between px-6 backdrop-blur-sm z-10">
+          <div className="flex items-center gap-4">
+             <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${status === 'streaming' ? 'bg-purple-900/20 border-purple-500/30' : 'bg-slate-900 border-slate-800'}`}>
+                <div className={`w-2 h-2 rounded-full ${status === 'streaming' ? 'bg-purple-500 animate-pulse' : status === 'done' ? 'bg-green-500' : 'bg-slate-500'}`} />
+                <span className="text-[10px] font-mono uppercase text-slate-400 tracking-wider">
+                  Status: <span className={status === 'streaming' ? 'text-purple-300' : status === 'done' ? 'text-green-300' : 'text-slate-200'}>{status.toUpperCase()}</span>
+                </span>
+             </div>
+             {status === 'streaming' && <span className="text-xs text-purple-400 animate-fade-in font-mono">&gt; Processing Neural Pipeline...</span>}
           </div>
-        ) : (
-          <div className="w-full max-w-5xl z-10">
-            <video 
-              ref={videoRef}
-              controls 
-              autoPlay 
-              className={`w-full rounded-xl shadow-2xl border border-slate-800 ${
-                aspectRatio === 'vertical' ? 'max-w-md mx-auto' : 'max-w-5xl'
-              }`}
-              style={aspectRatio === 'vertical' ? { aspectRatio: '9/16' } : {}}
-              onError={(e) => console.error('❌ Erro no player:', e)}
-              onLoadedMetadata={() => console.log('✅ Vídeo carregado')}
-            >
-              <source src={videoUrl} type="video/mp4" />
-              Seu navegador não suporta vídeo HTML5.
-            </video>
-            <a 
-              href={videoUrl} 
-              download 
-              className="mt-6 inline-flex items-center justify-center w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg gap-2"
-            >
-              <Download size={18} /> Baixar Vídeo
-            </a>
+          
+          <div className="flex items-center gap-6 text-[10px] font-mono text-slate-500">
+             <div className="flex items-center gap-2">
+                <Activity size={12} />
+                <span>CPU: {status === 'streaming' ? '82%' : '14%'}</span>
+             </div>
+             <div className="flex items-center gap-2">
+                <Layers size={12} />
+                <span>MEM: {status === 'streaming' ? '4.1GB' : '1.2GB'}</span>
+             </div>
           </div>
-        )}
+        </header>
+
+        <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-hidden z-10">
+          <div className="flex flex-col gap-6 min-h-0">
+            <ScriptView status={status} logs={logs} youtubeMetadata={youtubeMetadata} />
+          </div>
+
+          <div className="flex flex-col gap-6 min-h-0">
+            <div className="flex-1 min-h-0">
+              <Terminal logs={logs} />
+            </div>
+
+            <div className="flex-1 min-h-0 bg-slate-900/30 rounded-xl border border-slate-800 flex items-center justify-center p-4 shadow-lg backdrop-blur-sm relative group">
+              <div 
+                className={`relative overflow-hidden bg-black shadow-2xl transition-all duration-700 border border-slate-800 ${
+                  aspectRatio === 'vertical' 
+                    ? 'h-full aspect-[9/16] rounded-lg' 
+                    : 'w-full aspect-[16/9] max-h-full rounded-lg'
+                }`}
+              >
+                {videoUrl ? (
+                  <div className="w-full h-full relative">
+                    <video 
+                      src={videoUrl} 
+                      controls 
+                      className="w-full h-full object-contain bg-black" 
+                      autoPlay 
+                    />
+                    <a 
+                      href={videoUrl} 
+                      download
+                      className="absolute bottom-4 right-4 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Download Video"
+                    >
+                      <Download size={20} />
+                    </a>
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-700">
+                    {status === 'streaming' ? (
+                      <div className="flex flex-col items-center gap-3 animate-pulse">
+                          <RefreshCw size={32} className="animate-spin text-purple-600" />
+                          <div className="text-center">
+                            <p className="text-purple-400 font-mono text-xs tracking-widest">RENDERING ASSETS</p>
+                          </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Film size={48} className="mb-2 opacity-20" />
+                        <p className="text-xs font-mono opacity-40">AWAITING OUTPUT</p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );

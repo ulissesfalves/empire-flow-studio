@@ -868,6 +868,14 @@ HARD CONSTRAINTS:
 {self.d_config.get('constraint', '')}
 """
 
+        persona_block = """
+TARGET PERSONA:
+Smart, overworked, underpaid professional who feels exploited but can't articulate why.
+
+BRAND BUILDING RULE:
+Viewer must feel: "This channel understands things others don't."
+"""
+
         # ================= SHORT =================
         if self.duration == "short":
             base_prompt = f"""
@@ -894,12 +902,26 @@ ABSOLUTELY AVOID:
 - Generic advice
 - LinkedIn-style phrases
 - Neutral explanations
+
+ENDING RULE:
+Final line must reinterpret the opening hook with new meaning.
+Viewer should mentally replay the first 10 seconds.
+
+Max 90 words.
+Average sentence length: 6 words.
 """
 
         # ================= MEDIUM =================
         elif self.duration == "medium":
             base_prompt = f"""
-Role: Elite YouTube Retention Architect (Finance, Power & Hidden Systems)
+Role: Direct Response Retention Engineer for YouTube Monetization (Finance, Power & Hidden Systems)
+
+You design scripts to maximize:
+- Watch time
+- Rewatch rate
+- Comment rate
+- Share rate
+- Next-video click-through
 
 PRIMARY OBJECTIVE:
 Maximize Average View Duration and Session Time.
@@ -911,9 +933,9 @@ Each minute must unlock a new layer of understanding.
 MANDATORY STRUCTURE:
 0-10s — Shocked specific hook (concrete relatable situation + contradiction)
 0:10-0:40 — Clearly promise what the viewer will understand by the end
-Minute 1-2 — Reveal first hidden mechanism
-Minute 2-4 — Reveal how this mechanism is intentionally optimized
-Minute 4-6 — Reveal who benefits and how money is extracted
+Minute 1-2 — Answer Question #1: What changed that most people didn't notice?
+Minute 2-4 — Answer Question #2: Who designed this change and why?
+Minute 4-6 — Answer Question #3: Who is making money because of it?
 Final Minute — Disturbing reframe of the viewer's life
 
 ALGORITHMIC RULES:
@@ -932,6 +954,17 @@ ABSOLUTELY AVOID:
 - Long atmospheric buildup
 - Philosophical wandering
 - Pure motivation
+
+ENDING RULE:
+Final line must reinterpret the opening hook with new meaning.
+Viewer should mentally replay the first 10 seconds.
+
+REWATCH ENGINEERING:
+- Leave one implication unstated.
+- Do NOT fully resolve one consequence.
+- Viewer should feel: "I need to watch again."
+
+Max 900 words.
 """
 
         # ================= LONG =================
@@ -959,10 +992,16 @@ ABSOLUTELY AVOID:
 - Feel-good endings
 - Clear instructions
 - Over-explaining
+
+ENDING RULE:
+Final line must reinterpret the opening hook with new meaning.
+Viewer should mentally replay the first 10 seconds.
 """
 
         return f"""
 {base_prompt}
+
+{persona_block}
 
 TOPIC:
 {topic}
@@ -998,96 +1037,72 @@ FORMAT:
     # --------------------------------------------------
     def _build_critic_prompt(self, script_text):
 
-        # ================= SHORT =================
         if self.duration == "short":
             base_prompt = """
-    Role: YouTube Shorts Retention Engineer
+Role: YouTube Shorts Retention Engineer
 
-    OBJECTIVE:
-    Predict if this Short can exceed:
-    - 85% retention
-    - Strong rewatches
+OBJECTIVE:
+Score multidimensionally.
 
-    EVALUATE BASED ON:
-    - Scroll-stopping first line
-    - Shock or unfairness
-    - Escalation every line
-    - Open loop strength
-    - Rewatch trigger
+OUTPUT JSON ONLY:
+{
+ "hook_score": 0-10,
+ "curiosity_score": 0-10,
+ "rewatch_score": 0-10,
+ "share_score": 0-10,
+ "comment_score": 0-10,
+ "fatal_flaws": [],
+ "retention_risk_timestamp": "mm:ss",
+ "fix_instructions": ""
+}
+"""
 
-    AUTOMATIC FAIL IF:
-    - Any soft intro
-    - Teaching tone
-    - More than one idea
-    - No loop ending
-    """
-
-        # ================= MEDIUM =================
         elif self.duration == "medium":
             base_prompt = """
-    Role: YouTube Mid-Length Retention Engineer
+Role: YouTube Mid-Length Retention Engineer
 
-    OBJECTIVE:
-    Predict if this video can reach:
-    - 40%+ retention at 3 minutes
-    - High Average View Duration
-    - Strong session continuation
+OBJECTIVE:
+Score multidimensionally.
 
-    EVALUATE BASED ON:
-    - Specific hook
-    - Clear promised payoff
-    - New insight every 30–45 seconds
-    - Forward narrative momentum
-    - Mechanisms explained through examples
-    - Share-trigger potential
+OUTPUT JSON ONLY:
+{
+ "hook_score": 0-10,
+ "curiosity_score": 0-10,
+ "rewatch_score": 0-10,
+ "share_score": 0-10,
+ "comment_score": 0-10,
+ "fatal_flaws": [],
+ "retention_risk_timestamp": "mm:ss",
+ "fix_instructions": ""
+}
+"""
 
-    AUTOMATIC FAIL IF:
-    - Same idea repeated
-    - No explicit promise early
-    - Vague abstract language
-    - Emotional with no mechanism
-    """
-
-        # ================= LONG =================
         else:
             base_prompt = """
-    Role: YouTube Long-Form Retention Engineer
+Role: YouTube Long-Form Retention Engineer
 
-    OBJECTIVE:
-    Predict if this documentary can:
-    - Sustain deep attention
-    - Increase session time
-    - Drive binge behavior
+OBJECTIVE:
+Score multidimensionally.
 
-    EVALUATE BASED ON:
-    - Stakes introduced early
-    - Layered revelations
-    - Cause-and-effect logic
-    - Escalating consequences
-    - Uneasy ending
-
-    AUTOMATIC FAIL IF:
-    - Pure narration without mechanism
-    - Slow first minute
-    - Feels educational
-    - Clean or hopeful ending
-    """
+OUTPUT JSON ONLY:
+{
+ "hook_score": 0-10,
+ "curiosity_score": 0-10,
+ "rewatch_score": 0-10,
+ "share_score": 0-10,
+ "comment_score": 0-10,
+ "fatal_flaws": [],
+ "retention_risk_timestamp": "mm:ss",
+ "fix_instructions": ""
+}
+"""
 
         return f"""
-    {base_prompt}
+{base_prompt}
 
-    SCRIPT:
-    \"\"\"{script_text}\"\"\"
-
-    OUTPUT JSON ONLY:
-    {{ 
-    "score": 0-100,
-    "fatal_flaws": ["short bullet list"],
-    "retention_risk_timestamp": "mm:ss",
-    "fix_instructions": "Concrete rewrite instructions"
-    }}
-    """
-
+SCRIPT:
+\"\"\"{script_text}\"\"\"
+"""
 
     # --------------------------------------------------
     # MAIN LOOP (ASYNC GENERATOR)
@@ -1132,37 +1147,46 @@ FORMAT:
 
             try:
                 critic = json.loads(res_critic["text"].strip())
-                score = critic.get("score", 0)
+
+                hook = critic.get("hook_score", 0)
+                curiosity = critic.get("curiosity_score", 0)
+                rewatch = critic.get("rewatch_score", 0)
+                share = critic.get("share_score", 0)
+                comment = critic.get("comment_score", 0)
 
                 fatal_flaws = critic.get("fatal_flaws", [])
                 risk_time = critic.get("retention_risk_timestamp", "")
                 fix = critic.get("fix_instructions", "")
 
                 feedback = f"""
-                FATAL FLAWS:
-                {fatal_flaws}
+FATAL FLAWS:
+{fatal_flaws}
 
-                RETENTION DROP AT:
-                {risk_time}
+RETENTION DROP AT:
+{risk_time}
 
-                FIX INSTRUCTIONS:
-                {fix}
-                """
-
+FIX INSTRUCTIONS:
+{fix}
+"""
 
                 yield {
                     "type": "log",
-                    "content": f"📊 Algorithm Score: {score}/100"
+                    "content": f"📊 Hook:{hook} Curiosity:{curiosity} Rewatch:{rewatch} Share:{share} Comment:{comment}"
                 }
 
-                if score >= 90:
+                if (
+                    hook >= 8 and
+                    curiosity >= 8 and
+                    rewatch >= 7 and
+                    share >= 7
+                ):
                     yield {"type": "result", "content": best_draft}
                     return
+
             except:
                 feedback = "Make it sharper, darker, and more uncomfortable."
 
         yield {"type": "result", "content": best_draft}
-
 
 
 # --- GERAÇÃO DE IMAGENS ---
@@ -1883,47 +1907,90 @@ async def create_documentary_stream(
                 yield await send_log(f"🧵 Costurando {len(generated_files)} cenas...")
                 
                 # ==============================================================
-                # 🧠 GERAÇÃO DE TÍTULO VIRAL AUTOMÁTICO
+                # 🧠 GERAÇÃO DE METADADOS YOUTUBE & NOME DE ARQUIVO
                 # ==============================================================
-                yield await send_log("🧠 Criando nome viral para o arquivo...")
+                yield await send_log("🧠 Gerando SEO para YouTube (Título, Descrição, Tags)...")
                 
+                output_name = "final_viral.mp4" # Default fallback
+
                 try:
                     # Pega o começo do roteiro para contexto
-                    preview_text = full_script_data[0]['scenes'][0].get('narration', '')[:200]
+                    preview_text = full_script_data[0]['scenes'][0].get('narration', '')[:500]
                     
-                    filename_prompt = f"""
-ROLE: Viral YouTube Packaging Expert.
-TASK: Create a clickable, high-CTR filename for a video about: "{topic}".
-CONTEXT: The video starts with: "{preview_text}..."
+                    # --- PROMPT DUPLO: METADADOS + FILENAME ---
+                    seo_prompt = f"""
+ROLE: YouTube Monetization SEO Engineer
 
-RULES:
-1. MAX 6 words.
-2. Use underscores (_) instead of spaces.
-3. NO special characters (only letters, numbers, underscores).
-4. NO file extension in output (I will add .mp4).
-5. Must be catchy/intriguing.
+GOAL:
+Maximize CTR, Watch Time alignment, and long-term discoverability.
 
-Example Input: "Inflation history"
-Example Output: The_Silent_Money_Killer
+CONTEXT:
+Video topic: "{topic}"
+Opening of script: "{preview_text}..."
 
-OUTPUT ONLY THE STRING:
+TITLE ENGINEERING RULES:
+- 40–60 characters
+- Curiosity + threat + specificity
+- No emojis
+- Must imply hidden system or uncomfortable truth
+- Provide 5 title options
+
+DESCRIPTION RULES:
+- First 2 lines = hook that continues the title narrative
+- Short paragraph expanding the hidden mechanism
+- Bullet list of what viewer will learn
+- End with soft curiosity loop
+
+TAG RULES:
+Return 3 clusters:
+- 5 broad niche tags
+- 5 medium intent tags
+- 5 long-tail tags
+
+FILENAME RULES:
+- Lowercase
+- Underscores only
+- Based on BEST title option
+
+OUTPUT FORMAT (VALID JSON ONLY):
+{{
+  "titles": ["String", "String", "String", "String", "String"],
+  "description": "String",
+  "tags": {{
+    "broad": ["String","String","String","String","String"],
+    "medium": ["String","String","String","String","String"],
+    "long_tail": ["String","String","String","String","String"]
+  }},
+  "filename": "string"
+}}
 """
-                    # Usa o mesmo writer configurado para manter consistência
-                    title_res = await generate_text(writer_provider, writer_model, filename_prompt)
+                    # Usa o writer (modelo mais criativo)
+                    seo_res = await generate_text(writer_provider, writer_model, seo_prompt)
                     
-                    # Limpeza do resultado (remove aspas, espaços, quebras de linha)
-                    raw_title = title_res.get('text', 'viral_video').strip().replace('"', '').replace("'", "")
-                    # Remove qualquer caractere que não seja letra, número ou underscore
-                    safe_title = re.sub(r'[^a-zA-Z0-9_]', '', raw_title.replace(" ", "_"))
-                    
-                    if not safe_title: safe_title = "final_viral"
-                    output_name = f"{safe_title}.mp4"
-                    
-                    yield await send_log(f"🏷️ Nome escolhido: {output_name}")
-                    
+                    try:
+                        # Limpa e parseia o JSON
+                        clean_json = seo_res['text'].replace("```json","").replace("```","").strip()
+                        metadata = json.loads(clean_json)
+                        
+                        # Garante que o filename é seguro
+                        raw_filename = metadata.get('filename', 'viral_video')
+                        safe_filename = re.sub(r'[^a-zA-Z0-9_]', '', raw_filename.replace(" ", "_"))
+                        if not safe_filename: safe_filename = "final_viral"
+                        output_name = f"{safe_filename}.mp4"
+                        
+                        # Envia os metadados para o frontend
+                        yield f"data: {json.dumps({'youtube_metadata': metadata})}\n\n"
+                        yield await send_log(f"🏷️ SEO Gerado: {metadata.get('title')}")
+                        yield await send_log(f"💾 Salvando como: {output_name}")
+                        
+                    except Exception as json_e:
+                        print(f"Erro parse JSON SEO: {json_e}")
+                        yield await send_log("⚠️ Erro ao processar SEO da IA. Usando padrão.")
+                        output_name = "final_viral.mp4"
+
                 except Exception as e:
-                    print(f"Erro ao gerar título: {e}")
-                    output_name = "final_viral.mp4" # Fallback em caso de erro
+                    print(f"Erro ao gerar título/SEO: {e}")
+                    output_name = "final_viral.mp4"
 
                 output_path = os.path.join(path, output_name)
                 # ==============================================================
