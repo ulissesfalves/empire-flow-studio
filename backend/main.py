@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 import multiprocessing
 from datetime import datetime
+import traceback
 from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -1751,20 +1752,37 @@ async def create_documentary_stream(
     aspect_ratio: str = "horizontal",
     image_provider: str = "pollinations",
     use_consistent_seed: bool = True,
-    visual_style: str = "documentary"
+    visual_style: str = "documentary",
+    script_mode: str = "ai",        # ✅ NOVO
+    manual_script: str = ""          # ✅ NOVO
 ):
+    # ✅ DEBUG: Confirma que a função foi chamada
+    print(f"\n{'='*60}")
+    print(f"🚀 ENDPOINT CHAMADO!")
+    print(f"Topic: {topic}")
+    print(f"Script Mode: {script_mode}")
+    print(f"Manual Script Length: {len(manual_script) if manual_script else 0}")
+    print(f"{'='*60}\n")
+
     async def event_generator():
+        # ✅ DEBUG: Confirma que o generator foi iniciado
+        print("🔵 EVENT GENERATOR INICIADO")
+
         try:
+            print("🔵 Entrando no try block...")
+
             # Validação do aspect ratio
             if aspect_ratio not in ASPECT_RATIOS:
                 yield f"data: {json.dumps({'status': 'error', 'message': f'Aspect ratio inválido: {aspect_ratio}'})}\n\n"
                 return
+            print(f"✅ Aspect ratio válido: {aspect_ratio}")
             
             # Validação do image provider
             if image_provider not in IMAGE_PROVIDERS:
                 yield f"data: {json.dumps({'status': 'error', 'message': f'Image provider inválido: {image_provider}'})}\n\n"
                 return
-            
+            print(f"✅ Image provider válido: {image_provider}")
+
             # Verifica se provider requer API key
             provider_config = IMAGE_PROVIDERS[image_provider]
             if provider_config["requires_api"]:
@@ -1777,6 +1795,8 @@ async def create_documentary_stream(
                     error_msg = f'{provider_config["name"]} requer REPLICATE_API_KEY no .env'
                     yield f"data: {json.dumps({'status': 'error', 'message': error_msg})}\n\n"
                     return
+                
+            print("✅ API keys validadas")
             
             # Gera seed único para o projeto (se consistência habilitada)
             project_seed = random.randint(1000, 99999) if use_consistent_seed else None
@@ -1787,12 +1807,18 @@ async def create_documentary_stream(
             voice_info = VOICE_CONFIGS.get(voice_config, VOICE_CONFIGS["edge_tts"])
             style_info = VOICE_STYLES.get(voice_style, VOICE_STYLES["documentary"])
             
+            print("🔵 Preparando primeiro log...")
             yield await send_log(f"🚀 INICIANDO: {topic}")
+            print("✅ Primeiro log enviado!")
+
+            yield await send_log(f"📜 Modo: {'🤖 AI Generated' if script_mode == 'ai' else '✍️ Manual Script'}")
             yield await send_log(f"📐 Formato: {aspect_info['name']} ({aspect_info['ratio']}) - {resolution[0]}x{resolution[1]}")
             yield await send_log(f"🎙️ Voz: {voice_info['name']} | Estilo: {style_info['name']}")
             yield await send_log(f"🎨 Imagens: {provider_config['name']} | Seed: {project_seed if use_consistent_seed else 'Desabilitado'}")
             yield await send_log(f"🖼️ Estilo Visual: {visual_style.capitalize()}")
             yield await send_log(f"⚙️ Perfil: {CURRENT_PROFILE}")
+
+            print("✅ Logs iniciais enviados!")
 
             pid = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = os.path.join(PROJECTS_DIR, pid)
@@ -1810,50 +1836,147 @@ async def create_documentary_stream(
             critic_conf = {"provider": critic_provider, "model": critic_model}
             logger = ProjectLogger(path, topic, writer_conf, critic_conf, duration, voice_config, voice_style)
 
-            viral_brain = ViralBrain(writer_provider, writer_model, critic_provider, critic_model, duration, d_config)
             pdf_gen = PDFGenerator()
-
-            yield await send_log("🕵️ Pesquisando dados...")
-            with DDGS() as ddgs:
-                facts = "\n".join([f"- {r['title']}: {r['body']}" for r in ddgs.text(topic, max_results=5)])
-
-            yield await send_log("🏗️ Arquitetura Viral...")
-            struct_prompt = f"Context: Viral Doc '{topic}'. Data: {facts}. {d_config['structure']} {d_config['acts_prompt']} LANGUAGE: ENGLISH ONLY."
-
-            res = await generate_text(writer_provider, writer_model, struct_prompt)
-            if 'error' in res:
-                yield await send_log(f"❌ Erro Inicial: {res['error']}")
-                yield f"data: {json.dumps({'status': 'error', 'message': res['error']})}\n\n"
-                return
-            try: acts = json.loads(res['text'].replace("```json","").replace("```","").strip())['acts']
-            except: acts = [{"title": "Intro", "focus": "Start"}]
-
             generated_files = []
             full_script_data = []
 
-            for idx, act in enumerate(acts):
-                yield await send_log(f"🎬 Ato {idx+1}: {act['title']}...")
+            # ========================================
+            # NOVA LÓGICA: MODO MANUAL vs AI
+            # ========================================
+            
+            if script_mode == "manual" and manual_script.strip():
+                # ===== MODO MANUAL =====
+                yield await send_log("📝 Processando roteiro manual...")
+                
+                # Divide o roteiro em parágrafos (cada parágrafo = uma cena)
+                # Primeiro tenta dividir por duplo \n, depois por \n simples
+                paragraphs = [p.strip() for p in manual_script.split('\n\n') if p.strip()]
+                
+                if len(paragraphs) < 2:
+                    # Fallback: divide por linhas simples se não houver parágrafos
+                    paragraphs = [p.strip() for p in manual_script.split('\n') if p.strip() and len(p.strip()) > 10]
+                
+                if not paragraphs:
+                    yield await send_log("❌ Erro: Nenhuma cena detectada no roteiro")
+                    yield f"data: {json.dumps({'status': 'error', 'message': 'Roteiro vazio ou mal formatado'})}\n\n"
+                    return
+                
+                yield await send_log(f"🎬 {len(paragraphs)} cenas detectadas no roteiro")
+                
+                # Agrupa cenas em atos (3-5 cenas por ato é ideal)
+                scenes_per_act = max(3, min(5, len(paragraphs) // 3))
+                if len(paragraphs) <= 3:
+                    scenes_per_act = len(paragraphs)  # Se tiver poucas cenas, coloca tudo em 1 ato
+                
+                act_number = 1
+                for i in range(0, len(paragraphs), scenes_per_act):
+                    act_scenes_text = paragraphs[i:i+scenes_per_act]
+                    act_title = f"Act {act_number}"
+                    
+                    yield await send_log(f"🎭 {act_title}: {len(act_scenes_text)} cenas")
+                    
+                    scenes_data = []
+                    for scene_idx, scene_text in enumerate(act_scenes_text):
+                        yield f": keep-alive\n\n"
+                        yield await send_log(f"   🧠 Gerando visual prompt para cena {scene_idx+1}...")
+                        
+                        # Gera visual prompt usando IA (curto e direto)
+                        visual_prompt_request = f"""
+    Generate a concise visual description (max 100 characters) for AI image generation.
 
-                plan = None
-                async for brain_event in viral_brain.run_writer_critic_loop(topic, act['title'], facts, logger):
-                    if brain_event["type"] == "log":
-                        yield await send_log(brain_event["content"])
-                    elif brain_event["type"] == "result":
-                        plan = brain_event["content"]
-                    elif brain_event["type"] == "error":
-                        yield await send_log(f"❌ Erro Fatal: {brain_event['content']}")
-                        yield f"data: {json.dumps({'status': 'error', 'message': brain_event['content']})}\n\n"
-                        return
+    Scene narration: "{scene_text[:300]}..."
 
-                if not plan: continue
-                full_script_data.append({"title": act['title'], "scenes": plan.get('scenes', [])})
-                scenes = plan.get('scenes', [])
+    Output format (JSON only):
+    {{
+    "visual_search_term": "short keyword for search",
+    "visual_ai_prompt": "cinematic visual description for {visual_style} style"
+    }}
+    """
+                        
+                        try:
+                            ai_result = await generate_text(writer_provider, writer_model, visual_prompt_request)
+                            
+                            if 'error' not in ai_result:
+                                # Parse do JSON
+                                clean_json = ai_result['text'].replace("```json","").replace("```","").strip()
+                                visual_data = json.loads(clean_json)
+                                visual_search = visual_data.get('visual_search_term', scene_text[:50])
+                                visual_ai_prompt = visual_data.get('visual_ai_prompt', scene_text[:100])
+                            else:
+                                # Fallback se API falhar
+                                visual_search = scene_text[:50]
+                                visual_ai_prompt = f"{visual_style} cinematic shot: {scene_text[:80]}"
+                        
+                        except Exception as e:
+                            yield await send_log(f"   ⚠️ Erro ao gerar visual prompt: {str(e)[:50]}")
+                            # Fallback básico
+                            visual_search = scene_text[:50]
+                            visual_ai_prompt = f"{visual_style} cinematic shot: {scene_text[:80]}"
+                        
+                        scenes_data.append({
+                            "narration": scene_text,
+                            "visual_search_term": visual_search,
+                            "visual_ai_prompt": visual_ai_prompt
+                        })
+                    
+                    full_script_data.append({
+                        "title": act_title,
+                        "scenes": scenes_data
+                    })
+                    
+                    act_number += 1
+                
+                yield await send_log(f"✅ Estrutura criada: {len(full_script_data)} atos, {len(paragraphs)} cenas totais")
+            
+            else:
+                # ===== MODO AI (ORIGINAL) =====
+                viral_brain = ViralBrain(writer_provider, writer_model, critic_provider, critic_model, duration, d_config)
+                
+                yield await send_log("🕵️ Pesquisando dados...")
+                with DDGS() as ddgs:
+                    facts = "\n".join([f"- {r['title']}: {r['body']}" for r in ddgs.text(topic, max_results=5)])
 
+                yield await send_log("🏗️ Arquitetura Viral...")
+                struct_prompt = f"Context: Viral Doc '{topic}'. Data: {facts}. {d_config['structure']} {d_config['acts_prompt']} LANGUAGE: ENGLISH ONLY."
+
+                res = await generate_text(writer_provider, writer_model, struct_prompt)
+                if 'error' in res:
+                    yield await send_log(f"❌ Erro Inicial: {res['error']}")
+                    yield f"data: {json.dumps({'status': 'error', 'message': res['error']})}\n\n"
+                    return
+                
+                try: 
+                    acts = json.loads(res['text'].replace("```json","").replace("```","").strip())['acts']
+                except: 
+                    acts = [{"title": "Intro", "focus": "Start"}]
+
+                for idx, act in enumerate(acts):
+                    yield await send_log(f"🎬 Ato {idx+1}: {act['title']}...")
+
+                    plan = None
+                    async for brain_event in viral_brain.run_writer_critic_loop(topic, act['title'], facts, logger):
+                        if brain_event["type"] == "log":
+                            yield await send_log(brain_event["content"])
+                        elif brain_event["type"] == "result":
+                            plan = brain_event["content"]
+                        elif brain_event["type"] == "error":
+                            yield await send_log(f"❌ Erro Fatal: {brain_event['content']}")
+                            yield f"data: {json.dumps({'status': 'error', 'message': brain_event['content']})}\n\n"
+                            return
+
+                    if not plan: continue
+                    full_script_data.append({"title": act['title'], "scenes": plan.get('scenes', [])})
+
+            # ========================================
+            # RENDERIZAÇÃO (COMUM PARA AMBOS MODOS)
+            # ========================================
+            
+            for idx, act_data in enumerate(full_script_data):
+                scenes = act_data.get('scenes', [])
+                
                 for i, scene in enumerate(scenes):
-                    # --- CORREÇÃO: PING PARA O NAVEGADOR NÃO DESCONECTAR ---
                     yield f": keep-alive\n\n"
-
-                    yield await send_log(f"   🎥 Cena {i+1}: Produzindo assets...")
+                    yield await send_log(f"   🎥 Cena {i+1}/{len(scenes)}: Produzindo assets...")
 
                     result = await generate_visuals_and_audio(scene, i, idx, path, voice_config, voice_style, image_provider, project_seed, visual_style)
 
@@ -1870,18 +1993,17 @@ async def create_documentary_stream(
 
                     try:
                         temp = os.path.join(path, f"scene_{idx}_{i}.mp4")
-                        render_scene_optimized(audio_p, media_p, temp, aspect_ratio)  # Passa aspect_ratio
+                        render_scene_optimized(audio_p, media_p, temp, aspect_ratio)
                         
-                        # TESTE: Verifica se o vídeo foi gerado corretamente
+                        # Verificação do arquivo gerado
                         if os.path.exists(temp):
                             size = os.path.getsize(temp)
                             yield await send_log(f"   📹 Arquivo gerado: {size/1024:.1f}KB")
                             
-                            # Testa com ffprobe (timeout maior para arquivos grandes)
                             try:
                                 probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                                           "-show_entries", "stream=codec_name,width,height", 
-                                           "-of", "json", temp]
+                                        "-show_entries", "stream=codec_name,width,height", 
+                                        "-of", "json", temp]
                                 result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
                                 info = json.loads(result.stdout)
                                 if info.get('streams'):
@@ -1899,88 +2021,150 @@ async def create_documentary_stream(
                     except Exception as e:
                         yield await send_log(f"⚠️ Erro render cena {i+1}: {e}")
 
+            # Salva PDF do roteiro
             if full_script_data:
-                try: pdf_gen.save_script(path, topic, full_script_data)
-                except: pass
+                try: 
+                    pdf_gen.save_script(path, topic, full_script_data)
+                except: 
+                    pass
 
+            # ========================================
+            # FINALIZAÇÃO E CONCATENAÇÃO
+            # ========================================
+            
             if generated_files:
                 yield await send_log(f"🧵 Costurando {len(generated_files)} cenas...")
                 
-                # ==============================================================
-                # 🧠 GERAÇÃO DE METADADOS YOUTUBE & NOME DE ARQUIVO
-                # ==============================================================
+                # Geração de metadados YouTube
                 yield await send_log("🧠 Gerando SEO para YouTube (Título, Descrição, Tags)...")
                 
-                output_name = "final_viral.mp4" # Default fallback
+                output_name = "final_viral.mp4"
 
                 try:
                     # Pega o começo do roteiro para contexto
                     preview_text = full_script_data[0]['scenes'][0].get('narration', '')[:500]
                     
-                    # --- PROMPT DUPLO: METADADOS + FILENAME ---
                     seo_prompt = f"""
-ROLE: YouTube Monetization SEO Engineer
+ROLE: YouTube CTR & Monetization Growth Engineer
 
-GOAL:
-Maximize CTR, Watch Time alignment, and long-term discoverability.
+PRIMARY OBJECTIVE:
+Maximize click-through-rate FIRST.
+SEO is secondary.
 
 CONTEXT:
 Video topic: "{topic}"
 Opening of script: "{preview_text}..."
 
-TITLE ENGINEERING RULES:
-- 40–60 characters
-- Curiosity + threat + specificity
+====================================
+TITLE ENGINEERING
+====================================
+
+Generate 5 title options that follow ALL rules:
+
+- 45-60 characters
+- Feels like a warning
+- Implies hidden system or manipulation
+- Speaks directly to the viewer
+- No generic wording
+- No buzzwords
 - No emojis
-- Must imply hidden system or uncomfortable truth
-- Provide 5 title options
+- Avoid words: ultimate, complete, guide, tutorial, tips
 
-DESCRIPTION RULES:
-- First 2 lines = hook that continues the title narrative
-- Short paragraph expanding the hidden mechanism
-- Bullet list of what viewer will learn
-- End with soft curiosity loop
+Use one of these psychological frames:
+- "You were never meant to notice this"
+- "This explains why you feel stuck"
+- "This is why it keeps getting worse"
+- "You were trained to lose"
 
-TAG RULES:
-Return 3 clusters:
-- 5 broad niche tags
-- 5 medium intent tags
-- 5 long-tail tags
+Titles must sound slightly dangerous.
 
-FILENAME RULES:
+====================================
+DESCRIPTION ENGINEERING
+====================================
+
+Hard limits:
+- Maximum 6 lines total
+- No long paragraphs
+- No fluff
+
+Structure:
+
+Line 1:
+Continue the title narrative with tension.
+
+Line 2:
+Name the hidden mechanism in simple language.
+
+Line 3:
+Explain the consequence to the viewer.
+
+Lines 4-6 (bullets):
+- What is really happening  
+- Who benefits  
+- What you'll start seeing differently  
+
+Final line:
+Soft open loop (no solution).
+
+====================================
+TAG ENGINEERING
+====================================
+
+Return 15 tags total, separated into clusters:
+
+Broad (5):
+High-volume niche concepts.
+
+Medium (5):
+Problem-aware searches.
+
+Long-tail (5):
+Fear-based or question-based searches.
+
+Rules:
+- No hashtags
+- No duplicates
+- Natural language
+
+====================================
+FILENAME ENGINEERING
+====================================
+
 - Lowercase
 - Underscores only
-- Based on BEST title option
+- Based on BEST performing title option
+- Remove stopwords if needed
 
-OUTPUT FORMAT (VALID JSON ONLY):
+====================================
+OUTPUT FORMAT (VALID JSON ONLY - NO MARKDOWN):
+
 {{
-  "titles": ["String", "String", "String", "String", "String"],
-  "description": "String",
+  "titles": ["title1", "title2", "title3", "title4", "title5"],
+  "description": "Your description here",
   "tags": {{
-    "broad": ["String","String","String","String","String"],
-    "medium": ["String","String","String","String","String"],
-    "long_tail": ["String","String","String","String","String"]
+    "broad": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+    "medium": ["tag6", "tag7", "tag8", "tag9", "tag10"],
+    "long_tail": ["tag11", "tag12", "tag13", "tag14", "tag15"]
   }},
-  "filename": "string"
+  "filename": "your_filename_here"
 }}
-"""
-                    # Usa o writer (modelo mais criativo)
+
+    """
                     seo_res = await generate_text(writer_provider, writer_model, seo_prompt)
                     
                     try:
-                        # Limpa e parseia o JSON
                         clean_json = seo_res['text'].replace("```json","").replace("```","").strip()
                         metadata = json.loads(clean_json)
                         
-                        # Garante que o filename é seguro
+                        # Filename seguro
                         raw_filename = metadata.get('filename', 'viral_video')
                         safe_filename = re.sub(r'[^a-zA-Z0-9_]', '', raw_filename.replace(" ", "_"))
                         if not safe_filename: safe_filename = "final_viral"
                         output_name = f"{safe_filename}.mp4"
                         
-                        # Envia os metadados para o frontend
+                        # Envia metadados para frontend
                         yield f"data: {json.dumps({'youtube_metadata': metadata})}\n\n"
-                        yield await send_log(f"🏷️ SEO Gerado: {metadata.get('title')}")
+                        yield await send_log(f"🏷️ SEO Gerado: {metadata.get('titles', [''])[0]}")
                         yield await send_log(f"💾 Salvando como: {output_name}")
                         
                     except Exception as json_e:
@@ -1993,17 +2177,15 @@ OUTPUT FORMAT (VALID JSON ONLY):
                     output_name = "final_viral.mp4"
 
                 output_path = os.path.join(path, output_name)
-                # ==============================================================
 
                 success = stitch_video_files(generated_files, output_path)
                 
                 if success and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
-                    # Pós-processamento: Garante compatibilidade total
+                    # Pós-processamento de compatibilidade
                     yield await send_log("🔧 Otimizando compatibilidade do vídeo...")
                     temp_output = output_path.replace(".mp4", "_temp.mp4")
                     
                     try:
-                        # Re-encode com parâmetros de máxima compatibilidade
                         compat_cmd = [
                             "ffmpeg", "-y", "-i", output_path,
                             "-c:v", "libx264",
@@ -2021,8 +2203,6 @@ OUTPUT FORMAT (VALID JSON ONLY):
                         ]
                         
                         subprocess.run(compat_cmd, check=True, capture_output=True, text=True)
-                        
-                        # Substitui o arquivo original
                         os.remove(output_path)
                         os.rename(temp_output, output_path)
                         
@@ -2043,7 +2223,6 @@ OUTPUT FORMAT (VALID JSON ONLY):
                     yield await send_log(f"🔗 URL: {full_url}")
                     yield await send_log(f"📁 Pasta: projects/{pid}/")
                     
-                    # Retorna JSON final com informações completas
                     yield f"data: {json.dumps({
                         'status': 'done', 
                         'url': full_url,
@@ -2061,8 +2240,12 @@ OUTPUT FORMAT (VALID JSON ONLY):
                 yield f"data: {json.dumps({'status': 'error', 'message': 'Nenhum clipe gerado'})}\n\n"
 
         except Exception as e:
+            print(f"❌ ERRO FATAL: {str(e)}")
+            import traceback
+            traceback.print_exc()
             yield await send_log(f"❌ Erro Fatal: {str(e)}")
             yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+    print("🔵 Retornando StreamingResponse...")
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
