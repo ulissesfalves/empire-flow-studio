@@ -211,6 +211,13 @@ export default function MagnateAI() {
   const eventSourceRef = useRef(null);
   const [youtubeMetadata, setYoutubeMetadata] = useState(null);
 
+  // Estado para thumbnail_prompt
+  const [thumbnailPrompt, setThumbnailPrompt] = useState('');
+
+  // Estado para exibir thumbnail
+  const [thumbnailUrl, setThumbnailUrl] = useState(null);
+  const [thumbnailStatus, setThumbnailStatus] = useState(null);
+
   // NOVA: Toggle entre AI e Manual
   const [scriptMode, setScriptMode] = useState('ai'); // 'ai' ou 'manual'
   const [manualScript, setManualScript] = useState('');
@@ -274,6 +281,8 @@ export default function MagnateAI() {
     
     setStatus('streaming');
     setVideoUrl(null);
+    setThumbnailUrl(null);  // NOVO
+    setThumbnailStatus(null);  // NOVO
     setLogs([]);
     setYoutubeMetadata(null);
     if (eventSourceRef.current) eventSourceRef.current.close();
@@ -292,7 +301,8 @@ export default function MagnateAI() {
       use_consistent_seed: useConsistentSeed,
       visual_style: visualStyle,
       script_mode: scriptMode,
-      manual_script: scriptMode === 'manual' ? manualScript : ''
+      manual_script: scriptMode === 'manual' ? manualScript : '',
+      thumbnail_prompt: thumbnailPrompt
     });
 
     const url = `http://localhost:8000/create-stream?${params.toString()}`;
@@ -311,6 +321,8 @@ export default function MagnateAI() {
       }
       if (data.status === 'done') {
         setVideoUrl(data.url);
+        setThumbnailUrl(data.thumbnail_url);  // NOVO
+        setThumbnailStatus(data.thumbnail_status);  // NOVO
         setStatus('done');
         es.close();
       }
@@ -544,6 +556,22 @@ Behind the scenes, a silent revolution is taking place."
               </label>
             </div>
           </div>
+          
+          <div className="group">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block flex items-center gap-1 group-hover:text-purple-400 transition-colors">
+              <ImageIcon size={12} /> Thumbnail Customizada (Opcional)
+            </label>
+            <textarea
+              value={thumbnailPrompt}
+              onChange={(e) => setThumbnailPrompt(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all resize-none h-20 placeholder:text-slate-600 shadow-inner"
+              placeholder="Descreva a thumbnail ideal para seu vídeo... (deixe vazio para geração automática)"
+              disabled={status === 'streaming'}
+            />
+            <p className="text-[10px] text-slate-500 italic mt-1">
+              💡 Deixe em branco para a IA gerar automaticamente baseada no tópico
+            </p>
+          </div>
 
           <div className="group">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 block flex items-center gap-1 group-hover:text-purple-400 transition-colors">
@@ -642,7 +670,8 @@ Behind the scenes, a silent revolution is taking place."
                       src={videoUrl} 
                       controls 
                       className="w-full h-full object-contain bg-black" 
-                      autoPlay 
+                      autoPlay
+                      poster={thumbnailUrl || undefined}
                     />
                     <a 
                       href={videoUrl} 
@@ -668,6 +697,37 @@ Behind the scenes, a silent revolution is taking place."
                         <p className="text-xs font-mono opacity-40">AWAITING OUTPUT</p>
                       </>
                     )}
+                  </div>
+                )}
+
+                {/* NOVO: Exibir thumbnail separadamente com status */}
+                {thumbnailUrl && (
+                  <div className="mt-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-400">
+                        🖼️ Thumbnail Generated
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded ${
+                        thumbnailStatus === 'custom' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                        thumbnailStatus === 'auto' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                        'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        {thumbnailStatus === 'custom' ? 'Personalizada' :
+                        thumbnailStatus === 'auto' ? 'Auto-gerada' : 'Falha'}
+                      </span>
+                    </div>
+                    <img 
+                      src={thumbnailUrl} 
+                      alt="Video Thumbnail" 
+                      className="w-full rounded border border-slate-700"
+                    />
+                    <a 
+                      href={thumbnailUrl} 
+                      download="thumbnail.png"
+                      className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-400 hover:text-white transition-colors"
+                    >
+                      <Download size={14} /> Download Thumbnail
+                    </a>
                   </div>
                 )}
               </div>

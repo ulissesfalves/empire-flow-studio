@@ -68,7 +68,7 @@ PERFORMANCE_PROFILES = {
         "bitrate": "800k",
         "crf": "28",
         "threads": 1,
-        "whisper_model": "tiny",
+        "whisper_model": "medium",
         "enable_subtitles": False,
     },
     "low": {
@@ -79,7 +79,7 @@ PERFORMANCE_PROFILES = {
         "bitrate": "1500k",
         "crf": "25",
         "threads": max(1, multiprocessing.cpu_count() // 2),
-        "whisper_model": "tiny",
+        "whisper_model": "medium",
         "enable_subtitles": True,
     },
     "balanced": {
@@ -90,7 +90,7 @@ PERFORMANCE_PROFILES = {
         "bitrate": "2500k",
         "crf": "23",
         "threads": max(2, multiprocessing.cpu_count() - 1),
-        "whisper_model": "base",
+        "whisper_model": "medium",
         "enable_subtitles": True,
     },
     "quality": {
@@ -101,7 +101,7 @@ PERFORMANCE_PROFILES = {
         "bitrate": "5000k",
         "crf": "20",
         "threads": multiprocessing.cpu_count() - 1,
-        "whisper_model": "base",
+        "whisper_model": "medium",
         "enable_subtitles": True,
     }
 }
@@ -159,21 +159,21 @@ SETTINGS = PERFORMANCE_PROFILES[CURRENT_PROFILE].copy()
 CURRENT_ASPECT_RATIO = "horizontal"
 
 print(f"""
-╔════════════════════════════════════════╗
-║   PERFIL DE PERFORMANCE: {CURRENT_PROFILE.upper():^12}  ║
-╠════════════════════════════════════════╣
-║ FPS: {SETTINGS['fps']}                              ║
+╔═════════════════════════════════════════╗
+║   PERFIL DE PERFORMANCE: {CURRENT_PROFILE.upper():^12}   ║
+╠═════════════════════════════════════════╣
+║ FPS: {SETTINGS['fps']}                         ║
 ║ Preset: {SETTINGS['preset']:^10}                ║
 ║ Threads: {SETTINGS['threads']}                            ║
 ║ Legendas: {'✅ Sim' if SETTINGS['enable_subtitles'] else '❌ Não':^5}                      ║
-╚════════════════════════════════════════╝
+╚═════════════════════════════════════════╝
 """)
 
 # --- CONFIGURAÇÃO ORIGINAL ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-caminho_magick = r"C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe"
+caminho_magick = r"C:\Users\CS260490\tools\imagemagick\magick.exe"
 if os.path.exists(caminho_magick):
     change_settings({"IMAGEMAGICK_BINARY": caminho_magick})
 
@@ -266,6 +266,16 @@ SUBJECT: {scene_description}
 
 Style: Photorealistic, no CGI, authentic, highly detailed."""
 }
+
+# Template específico para thumbnails do YouTube
+THUMBNAIL_STYLE_TEMPLATE = """YouTube thumbnail, eye-catching, professional design, 
+high contrast, dramatic lighting, clickbait-worthy composition, 8k quality,
+vivid colors, attention-grabbing visual.
+
+SUBJECT: {scene_description}
+
+Style: Professional YouTube thumbnail, bold and engaging, no text overlay needed, 
+ultra detailed, perfect for social media."""
 
 # --- CONFIGURAÇÕES DE VOZ ---
 VOICE_CONFIGS = {
@@ -392,7 +402,7 @@ def stitch_video_files(video_files, output_path):
     
     # Valida que todos os arquivos existem e diagnóstico
     valid_files = []
-    print(f"\n🔍 DIAGNÓSTICO DE VÍDEOS INDIVIDUAIS:")
+    print(f"\n🔎 DIAGNÓSTICO DE VÍDEOS INDIVIDUAIS:")
     for v in video_files:
         if os.path.exists(v):
             size = os.path.getsize(v)
@@ -407,7 +417,7 @@ def stitch_video_files(video_files, output_path):
                 print(f"     Duração: {duration:.2f}s")
                 valid_files.append(v)
             except subprocess.TimeoutExpired:
-                print(f"     ⏱️ Timeout na verificação (mas arquivo existe, incluindo)")
+                print(f"     ⏳ Timeout na verificação (mas arquivo existe, incluindo)")
                 valid_files.append(v)
             except Exception as e:
                 print(f"     ⚠️ Erro na verificação: {str(e)[:50]} (incluindo mesmo assim)")
@@ -456,7 +466,7 @@ def stitch_video_files(video_files, output_path):
                 duration = float(result.stdout.strip())
                 print(f"   Duração total: {duration:.2f}s")
             except subprocess.TimeoutExpired:
-                print("   ⏱️ Timeout na verificação (mas arquivo foi criado)")
+                print("   ⏳ Timeout na verificação (mas arquivo foi criado)")
             except:
                 print("   ⚠️ Não foi possível verificar duração (mas arquivo existe)")
         
@@ -1190,10 +1200,135 @@ FIX INSTRUCTIONS:
         yield {"type": "result", "content": best_draft}
 
 
-# --- GERAÇÃO DE IMAGENS ---
+# ==========================================
+# MODELOS ALTERNATIVOS PARA RETRY INTELIGENTE
+# ==========================================
+
+REPLICATE_FALLBACK_MODELS = {
+    "banana": [
+        # Tentativa 1: SDXL base oficial (mais confiável que o modelo original quebrado)
+        "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+        # Tentativa 2: SDXL Lightning (mais rápido)
+        "bytedance/sdxl-lightning-4step:5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637",
+        # Tentativa 3: SDXL Turbo (fallback rápido)
+        "stability-ai/sdxl-turbo:da77bc59ee60423279fd632efb4795ab731d9e3ca9705ef3341091fb989b7eaf"
+    ],
+    "sdxl": [
+        # Tentativa 1: Modelo original
+        "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+        # Tentativa 2: SDXL Lightning
+        "bytedance/sdxl-lightning-4step:5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637",
+        # Tentativa 3: SDXL Turbo
+        "stability-ai/sdxl-turbo:da77bc59ee60423279fd632efb4795ab731d9e3ca9705ef3341091fb989b7eaf"
+    ],
+    "flux_pro": [
+        # Tentativa 1: Flux Pro (original)
+        "black-forest-labs/flux-pro",
+        # Tentativa 2: Flux Dev (gratuito)
+        "black-forest-labs/flux-dev",
+        # Tentativa 3: Flux Schnell (mais rápido)
+        "black-forest-labs/flux-schnell"
+    ]
+}
+
+# ==========================================
+# FUNÇÃO AUXILIAR: RETRY INTELIGENTE PARA REPLICATE
+# ==========================================
+
+async def attempt_image_generation_with_replicate(provider_key, enhanced_prompt, width, height, aspect, seed, attempt=0):
+    """
+    Tenta gerar imagem com Replicate usando modelos alternativos em caso de falha
+    
+    Args:
+        provider_key: 'banana', 'sdxl' ou 'flux_pro'
+        enhanced_prompt: Prompt completo com template
+        width: Largura da imagem
+        height: Altura da imagem
+        aspect: Aspect ratio string (ex: "16:9")
+        seed: Seed para consistência (opcional)
+        attempt: Número da tentativa atual (0-2)
+    
+    Returns:
+        tuple: (image_data, model_used) ou None se falhar
+    """
+    import replicate
+    
+    models_to_try = REPLICATE_FALLBACK_MODELS.get(provider_key, [])
+    
+    if attempt >= len(models_to_try):
+        return None  # Esgotou todas as tentativas
+    
+    model_path = models_to_try[attempt]
+    
+    try:
+        model_name = model_path.split('/')[1].split(':')[0] if '/' in model_path else model_path
+        print(f"   🔄 Tentativa {attempt + 1}/{len(models_to_try)}: {model_name}")
+        
+        # Parâmetros base
+        input_params = {
+            "prompt": enhanced_prompt,
+            "num_outputs": 1
+        }
+        
+        # Adiciona parâmetros específicos baseado no modelo
+        if "flux" in model_path.lower():
+            input_params["aspect_ratio"] = aspect
+            input_params["output_format"] = "png"
+            input_params["output_quality"] = 90 if attempt > 0 else 100  # Reduz qualidade em retry
+            if seed is not None and attempt == 0:  # Só usa seed na primeira tentativa
+                input_params["seed"] = seed
+        else:
+            # SDXL variants
+            input_params["width"] = width
+            input_params["height"] = height
+            
+            if attempt == 0:
+                # Parâmetros completos só na primeira tentativa
+                input_params["num_inference_steps"] = 50
+                input_params["guidance_scale"] = 7.5
+                input_params["scheduler"] = "K_EULER"
+                if seed is not None:
+                    input_params["seed"] = seed
+            else:
+                # Parâmetros simplificados em retry (mais rápido e mais compatível)
+                input_params["num_inference_steps"] = 25
+                input_params["guidance_scale"] = 7.0
+        
+        # Executa a geração
+        output = replicate.run(model_path, input=input_params)
+        
+        # Extrai URL da imagem
+        if isinstance(output, list):
+            image_url = str(output[0])
+        else:
+            image_url = str(output)
+        
+        # Download da imagem
+        image_data = requests.get(image_url, timeout=30).content
+        
+        print(f"   ✅ Sucesso com {model_name}")
+        
+        return image_data, model_name
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"   ⚠️ Falha na tentativa {attempt + 1}: {error_msg[:120]}")
+        
+        # Se não foi erro de permissão/versão/quota, não tenta mais
+        if not any(keyword in error_msg.lower() for keyword in ["422", "permission", "version", "not permitted", "does not exist"]):
+            print(f"   ⚠️ Erro não recuperável, pulando retries")
+            return None
+        
+        # Tenta próximo modelo
+        return await attempt_image_generation_with_replicate(
+            provider_key, enhanced_prompt, width, height, aspect, seed, attempt + 1
+        )
+
+
+# --- GERAÇÃO DE IMAGENS COM RETRY INTELIGENTE ---
 async def generate_image_with_provider(prompt, provider, aspect_ratio, seed=None, style_template="documentary"):
     """
-    Gera imagem usando o provider especificado
+    Gera imagem usando o provider especificado com SISTEMA DE RETRY AUTOMÁTICO
     
     Args:
         prompt: Descrição da cena
@@ -1203,157 +1338,98 @@ async def generate_image_with_provider(prompt, provider, aspect_ratio, seed=None
         style_template: documentary, cinematic, photorealistic
     
     Returns:
-        tuple: (image_path, provider_used) ou dict com error
+        tuple: (image_data, provider_used) - NUNCA retorna erro, sempre gera imagem
     """
     
-    # Valida provider
+    # ===== VALIDAÇÃO =====
     if provider not in IMAGE_PROVIDERS:
-        return {"error": f"Provider inválido: {provider}"}
+        print(f"⚠️ Provider inválido '{provider}', usando Pollinations")
+        provider = "pollinations"
     
     config = IMAGE_PROVIDERS[provider]
     
-    # Verifica API key se necessário
+    # Verifica API key
     if config["requires_api"]:
         api_key_var = config["api_key_var"]
         if api_key_var == "OPENAI_API_KEY" and not OPENAI_API_KEY:
-            return {"error": f"❌ ERRO CRÍTICO: {provider} selecionado mas OPENAI_API_KEY não configurada. Configure no .env ou troque o provider."}
+            print(f"⚠️ {provider} requer OPENAI_API_KEY, usando Pollinations")
+            provider = "pollinations"
+            config = IMAGE_PROVIDERS["pollinations"]
         elif api_key_var == "REPLICATE_API_KEY" and not REPLICATE_API_KEY:
-            return {"error": f"❌ ERRO CRÍTICO: {provider} selecionado mas REPLICATE_API_KEY não configurada. Configure no .env ou troque o provider."}
+            print(f"⚠️ {provider} requer REPLICATE_API_KEY, usando Pollinations")
+            provider = "pollinations"
+            config = IMAGE_PROVIDERS["pollinations"]
         
-        if api_key_var == "REPLICATE_API_KEY":
+        if api_key_var == "REPLICATE_API_KEY" and REPLICATE_API_KEY:
             os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_KEY
     
     # Aplica template de estilo
     template = VISUAL_STYLE_TEMPLATES.get(style_template, VISUAL_STYLE_TEMPLATES["documentary"])
     enhanced_prompt = template.format(scene_description=prompt)
     
-    # Determina aspect ratio
+    # Determina dimensões
     aspect = "9:16" if aspect_ratio == "vertical" else "16:9"
     width = 720 if aspect_ratio == "vertical" else 1280
     height = 1280 if aspect_ratio == "vertical" else 720
     
+    # ===== TENTATIVA COM PROVIDER ORIGINAL =====
     try:
-        # ===== FLUX PRO =====
-        if provider == "flux_pro":
-            import replicate
-            
-            input_params = {
-                "prompt": enhanced_prompt,
-                "aspect_ratio": aspect,
-                "output_format": "png",
-                "output_quality": 100,
-                "safety_tolerance": 2
-            }
-            
-            if seed is not None and config["supports_seed"]:
-                input_params["seed"] = seed
-            
-            output = replicate.run(
-                "black-forest-labs/flux-pro",
-                input=input_params
-            )
-            
-            # Download da imagem
-            # CORREÇÃO: Tratamento para objeto FileOutput do Replicate
-            if isinstance(output, list):
-                image_url = str(output[0])
-            else:
-                image_url = str(output) # Converte FileOutput diretamente para URL
-            
-            image_data = requests.get(image_url, timeout=30).content
-            
-            return image_data, "Flux Pro"
-        
-        # ===== STABLE DIFFUSION XL =====
-        elif provider == "sdxl":
-            import replicate
-            
-            input_params = {
-                "prompt": enhanced_prompt,
-                "width": width,
-                "height": height,
-                "num_outputs": 1,
-                "scheduler": "K_EULER",
-                "num_inference_steps": 50,
-                "guidance_scale": 7.5,
-                "refine": "expert_ensemble_refiner"
-            }
-            
-            if seed is not None and config["supports_seed"]:
-                input_params["seed"] = seed
-            
-            output = replicate.run(
-                "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
-                input=input_params
-            )
-            
-            image_url = output[0] if isinstance(output, list) else output
-            image_data = requests.get(image_url, timeout=30).content
-            
-            return image_data, "SDXL"
-        
-        # ===== BANANA (Nano model) =====
-        elif provider == "banana":
-            import replicate
-            
-            input_params = {
-                "prompt": enhanced_prompt,
-                "width": width,
-                "height": height,
-                "num_outputs": 1
-            }
-            
-            if seed is not None and config["supports_seed"]:
-                input_params["seed"] = seed
-            
-            output = replicate.run(
-                "fofr/sdxl-neon-mecha:c3c9c5f0e4ed4a8c876f15f2af7c4b5f46f12b2fd0dd69a0d54e2d0b6e3e9c0e",
-                input=input_params
-            )
-            
-            image_url = output[0] if isinstance(output, list) else output
-            image_data = requests.get(image_url, timeout=30).content
-            
-            return image_data, "Nano Banana"
-        
         # ===== DALL-E 3 =====
-        elif provider == "dalle3":
+        if provider == "dalle3":
             client = OpenAI(api_key=OPENAI_API_KEY)
-            
-            # DALL-E 3 não suporta seed ou aspect ratio custom
             size = "1024x1792" if aspect_ratio == "vertical" else "1792x1024"
             
-            response = client.images.generate(
-                model="dall-e-3",
-                prompt=enhanced_prompt[:4000],  # DALL-E tem limite de caracteres
-                size=size,
-                quality="hd",
-                n=1
+            try:
+                response = client.images.generate(
+                    model="dall-e-3",
+                    prompt=enhanced_prompt[:4000],
+                    size=size,
+                    quality="hd",
+                    n=1
+                )
+                image_url = response.data[0].url
+                image_data = requests.get(image_url, timeout=30).content
+                return image_data, "DALL-E 3"
+            
+            except Exception as e:
+                print(f"   ⚠️ DALL-E 3 falhou: {str(e)[:80]}")
+                # DALL-E não tem retry, vai direto pro fallback
+        
+        # ===== REPLICATE PROVIDERS (com retry inteligente) =====
+        elif provider in ["flux_pro", "sdxl", "banana"]:
+            result = await attempt_image_generation_with_replicate(
+                provider, enhanced_prompt, width, height, aspect, seed, attempt=0
             )
             
-            image_url = response.data[0].url
-            image_data = requests.get(image_url, timeout=30).content
+            if result:
+                return result  # Sucesso com algum dos modelos!
             
-            return image_data, "DALL-E 3"
+            print(f"   ⚠️ Todas as tentativas com {provider} falharam")
         
-        # ===== POLLINATIONS =====
+        # ===== POLLINATIONS (sempre funciona) =====
         elif provider == "pollinations":
             url = f"https://image.pollinations.ai/prompt/{enhanced_prompt.replace(' ','%20')}?width={width}&height={height}&model=flux&nologo=true"
-            
             image_data = requests.get(url, timeout=30).content
-            
             return image_data, "Pollinations"
     
     except Exception as e:
-        error_msg = str(e)
-        
-        # Detecta erros específicos
-        if "credit" in error_msg.lower() or "quota" in error_msg.lower() or "billing" in error_msg.lower():
-            return {"error": f"❌ ERRO CRÍTICO: Créditos esgotados no {config['name']}. Adicione créditos ou troque o provider."}
-        
-        return {"error": f"Erro ao gerar imagem com {config['name']}: {error_msg}"}
+        print(f"   ⚠️ Erro inesperado com {provider}: {str(e)[:100]}")
     
-    return {"error": f"Provider {provider} não implementado corretamente"}
+    # ===== FALLBACK FINAL: POLLINATIONS =====
+    print(f"   🔄 Fallback automático para Pollinations (gratuito e sempre disponível)")
+    try:
+        url = f"https://image.pollinations.ai/prompt/{enhanced_prompt.replace(' ','%20')}?width={width}&height={height}&model=flux&nologo=true"
+        image_data = requests.get(url, timeout=30).content
+        return image_data, "Pollinations (Fallback)"
+    
+    except Exception as e:
+        # Última tentativa: Pollinations com prompt simplificado
+        print(f"   ⚠️ Pollinations falhou, tentando com prompt simplificado")
+        simple_prompt = prompt[:200]  # Usa prompt original, mais curto
+        url = f"https://image.pollinations.ai/prompt/{simple_prompt.replace(' ','%20')}?width={width}&height={height}&model=flux&nologo=true"
+        image_data = requests.get(url, timeout=30).content
+        return image_data, "Pollinations (Simple)"
+
     narr_text = scene.get('narration') or scene.get('script') or scene.get('text')
     if not narr_text: return None
     
@@ -1630,14 +1706,13 @@ async def generate_visuals_and_audio(scene, index, act_index, project_path, voic
             style_template=visual_style
         )
         
-        # Verifica se houve erro crítico
-        if isinstance(result, dict) and "error" in result:
-            return result  # Retorna erro para parar a execução
-        
-        # Salva imagem
+        # A nova função SEMPRE retorna imagem (nunca erro)
+        # Formato: (image_data, provider_used)
         image_data, vis_source = result
         with open(media_path, 'wb') as f:
             f.write(image_data)
+        
+        print(f"   ✅ Imagem salva: {len(image_data)/1024:.1f}KB via {vis_source}")
     else:
         vis_source = "Cache"
 
@@ -1684,7 +1759,7 @@ def render_scene_optimized(audio_path, media_path, output_path, aspect_ratio="ho
         print(f"   Resolução final: {target_w}x{target_h} ({ASPECT_RATIOS[aspect_ratio]['ratio']})")
 
         # Zoom sutil
-        clip = clip.resize(lambda t: 1 + 0.04*t)
+        clip = clip.resize(lambda t: 1 + 0.015*t)
 
         # Legendas (se habilitadas no perfil)
         if SETTINGS['enable_subtitles']:
@@ -1702,6 +1777,21 @@ def render_scene_optimized(audio_path, media_path, output_path, aspect_ratio="ho
 
         print(f"   Renderizando com preset={SETTINGS['preset']}, fps={SETTINGS['fps']}, threads={SETTINGS['threads']}...")
         
+        # ==========================================
+        # SUAVIZAÇÃO DE TRANSIÇÕES (FADES)
+        # ==========================================
+        # Define a duração da suavização (0.2s a 0.3s é ideal para documentários)
+        FADE_DURATION = 0.25 
+
+        # 1. Suaviza o Áudio (Evita estalos e cortes secos na voz)
+        # Importante: Aplicamos no audio_clip antes de juntar, ou na final_scene
+        final_scene = final_scene.audio_fadein(FADE_DURATION).audio_fadeout(FADE_DURATION)
+
+        # 2. Suaviza o Vídeo (Cria um leve fade do preto e para o preto)
+        # Isso disfarça a troca brusca de imagens
+        final_scene = final_scene.fadein(FADE_DURATION).fadeout(FADE_DURATION)
+        # ==========================================
+
         # Renderização com parâmetros otimizados e garantidos para concatenação
         final_scene.write_videofile(
             output_path,
@@ -1737,6 +1827,108 @@ def render_scene_optimized(audio_path, media_path, output_path, aspect_ratio="ho
 
     except Exception as e:
         raise Exception(f"Erro na renderização: {str(e)}")
+    
+
+# ==========================================
+# FUNÇÃO COMPLETA: GERAÇÃO DE THUMBNAIL
+# ==========================================
+# Adicione esta função após a função render_scene_optimized() no main.py
+
+async def generate_thumbnail(topic, thumbnail_prompt, project_path, image_provider, aspect_ratio, visual_style, writer_provider, writer_model):
+    """
+    Gera thumbnail personalizada para o vídeo
+    
+    Args:
+        topic: Tópico do vídeo
+        thumbnail_prompt: Prompt customizado do usuário (se vazio, gera automaticamente)
+        project_path: Caminho do projeto
+        image_provider: Provider de imagem a usar
+        aspect_ratio: Aspect ratio do vídeo (para manter consistência)
+        visual_style: Estilo visual
+        writer_provider: Provider do LLM para gerar prompt automático
+        writer_model: Modelo do LLM
+    
+    Returns:
+        tuple: (thumbnail_path, thumbnail_url, is_custom) ou dict com error
+    """
+    
+    thumbnail_path = os.path.join(project_path, "thumbnail.png")
+    
+    # Se já existe, retorna
+    if os.path.exists(thumbnail_path):
+        project_id = os.path.basename(project_path)
+        return thumbnail_path, f"http://localhost:8000/projects/{project_id}/thumbnail.png", False
+    
+    # Decide o prompt final
+    final_prompt = thumbnail_prompt
+    is_custom = bool(thumbnail_prompt.strip())
+    
+    # Se não tiver prompt customizado, gera automaticamente
+    if not is_custom:
+        auto_prompt_request = f"""
+Generate a compelling YouTube thumbnail description for this video topic:
+
+TOPIC: "{topic}"
+
+REQUIREMENTS:
+- Eye-catching and attention-grabbing visual
+- Bold, dramatic composition
+- High contrast and vivid colors
+- Professional quality
+- Perfect for social media engagement
+- Should make people want to click
+
+OUTPUT (text only, no JSON):
+A single paragraph describing the ideal thumbnail image (max 150 words).
+Focus on visual elements, composition, mood, and style.
+"""
+        
+        try:
+            ai_result = await generate_text(writer_provider, writer_model, auto_prompt_request)
+            
+            if 'error' not in ai_result:
+                final_prompt = ai_result['text'].strip()
+            else:
+                # Fallback básico
+                final_prompt = f"Professional YouTube thumbnail: {topic}, dramatic lighting, bold composition, eye-catching design"
+        
+        except Exception as e:
+            print(f"⚠️ Erro ao gerar prompt automático: {e}")
+            final_prompt = f"Professional YouTube thumbnail: {topic}, dramatic lighting, bold composition, eye-catching design"
+    
+    # Aplica template de thumbnail
+    enhanced_prompt = THUMBNAIL_STYLE_TEMPLATE.format(scene_description=final_prompt)
+    
+    # Gera a thumbnail (sempre em horizontal 16:9 para YouTube padrão, a menos que seja shorts)
+    # Para Shorts (vertical), mantém vertical. Para YouTube normal, força horizontal.
+    thumb_aspect = aspect_ratio if aspect_ratio == "vertical" else "horizontal"
+    
+    try:
+        result = await generate_image_with_provider(
+            prompt=enhanced_prompt,
+            provider=image_provider,
+            aspect_ratio=thumb_aspect,
+            seed=None,  # Thumbnails não precisam de seed consistente
+            style_template="cinematic"  # Força estilo cinematic para thumbnails
+        )
+        
+        # Verifica erro
+        if isinstance(result, dict) and "error" in result:
+            return result
+        
+        # Salva thumbnail
+        image_data, provider_used = result
+        with open(thumbnail_path, 'wb') as f:
+            f.write(image_data)
+        
+        project_id = os.path.basename(project_path)
+        thumbnail_url = f"http://localhost:8000/projects/{project_id}/thumbnail.png"
+        
+        return thumbnail_path, thumbnail_url, is_custom
+    
+    except Exception as e:
+        return {"error": f"Erro ao gerar thumbnail: {str(e)}"}
+
 
 # --- STREAMING ---
 @app.get("/create-stream")
@@ -1754,7 +1946,8 @@ async def create_documentary_stream(
     use_consistent_seed: bool = True,
     visual_style: str = "documentary",
     script_mode: str = "ai",        # ✅ NOVO
-    manual_script: str = ""          # ✅ NOVO
+    manual_script: str = "",          # ✅ NOVO
+    thumbnail_prompt: str = ""  # NOVO
 ):
     # ✅ DEBUG: Confirma que a função foi chamada
     print(f"\n{'='*60}")
@@ -1767,6 +1960,11 @@ async def create_documentary_stream(
     async def event_generator():
         # ✅ DEBUG: Confirma que o generator foi iniciado
         print("🔵 EVENT GENERATOR INICIADO")
+
+        if thumbnail_prompt.strip():
+            yield await send_log(f"🎨 Thumbnail: Personalizada (prompt customizado)")
+        else:
+            yield await send_log(f"🎨 Thumbnail: Auto-gerada pela IA")
 
         try:
             print("🔵 Entrando no try block...")
@@ -2002,8 +2200,8 @@ async def create_documentary_stream(
                             
                             try:
                                 probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                                        "-show_entries", "stream=codec_name,width,height", 
-                                        "-of", "json", temp]
+                                             "-show_entries", "stream=codec_name,width,height", 
+                                             "-of", "json", temp]
                                 result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
                                 info = json.loads(result.stdout)
                                 if info.get('streams'):
@@ -2012,7 +2210,7 @@ async def create_documentary_stream(
                                 else:
                                     yield await send_log(f"   ⚠️ AVISO: Vídeo sem stream de vídeo!")
                             except subprocess.TimeoutExpired:
-                                yield await send_log(f"   ⏱️ Verificação demorada, mas arquivo existe")
+                                yield await send_log(f"   ⏳ Verificação demorada, mas arquivo existe")
                             except Exception as probe_e:
                                 yield await send_log(f"   ⚠️ Verificação ignorada: {str(probe_e)[:50]}")
                         
@@ -2033,7 +2231,7 @@ async def create_documentary_stream(
             # ========================================
             
             if generated_files:
-                yield await send_log(f"🧵 Costurando {len(generated_files)} cenas...")
+                yield await send_log(f"🧶 Costurando {len(generated_files)} cenas...")
                 
                 # Geração de metadados YouTube
                 yield await send_log("🧠 Gerando SEO para YouTube (Título, Descrição, Tags)...")
@@ -2221,16 +2419,69 @@ OUTPUT FORMAT (VALID JSON ONLY - NO MARKDOWN):
                     
                     yield await send_log("🎉 VÍDEO FINALIZADO!")
                     yield await send_log(f"🔗 URL: {full_url}")
-                    yield await send_log(f"📁 Pasta: projects/{pid}/")
+                    yield await send_log(f"📂 Pasta: projects/{pid}/")
+
+                    # GERAÇÃO DA THUMBNAIL
+                    yield await send_log("🎨 Gerando thumbnail do vídeo...")
+
+                    try:
+                        thumbnail_result = await generate_thumbnail(
+                            topic=topic,
+                            thumbnail_prompt=thumbnail_prompt,
+                            project_path=path,
+                            image_provider=image_provider,
+                            aspect_ratio=aspect_ratio,
+                            visual_style=visual_style,
+                            writer_provider=writer_provider,
+                            writer_model=writer_model
+                        )
+                        
+                        if isinstance(thumbnail_result, dict) and "error" in thumbnail_result:
+                            yield await send_log(f"⚠️ Erro ao gerar thumbnail: {thumbnail_result['error']}")
+                            yield await send_log("📹 Vídeo principal não foi afetado - continuando...")
+                            thumbnail_url = None
+                            thumbnail_status = "failed"
+                        else:
+                            thumb_path, thumbnail_url, is_custom = thumbnail_result
+                            
+                            if is_custom:
+                                yield await send_log("✅ Thumbnail personalizada gerada com sucesso!")
+                                thumbnail_status = "custom"
+                            else:
+                                yield await send_log("✅ Thumbnail gerada automaticamente pela IA!")
+                                thumbnail_status = "auto"
+                            
+                            if os.path.exists(thumb_path):
+                                thumb_size = os.path.getsize(thumb_path)
+                                yield await send_log(f"📊 Thumbnail: {thumb_size/1024:.1f}KB")
+
+                    except Exception as thumb_error:
+                        yield await send_log(f"⚠️ Erro inesperado na thumbnail: {str(thumb_error)[:100]}")
+                        yield await send_log("📹 Vídeo principal não foi afetado - continuando...")
+                        thumbnail_url = None
+                        thumbnail_status = "failed"
                     
-                    yield f"data: {json.dumps({
-                        'status': 'done', 
-                        'url': full_url,
+                    # CORREÇÃO: Cria o objeto primeiro
+                    final_data = {
+                        'status': 'done',
+                        'url': f"http://localhost:8000/projects/{pid}/{output_name}",
                         'project_id': pid,
                         'filename': output_name,
-                        'size_mb': round(final_size / (1024*1024), 2),
-                        'direct_path': f'/projects/{pid}/{output_name}'
-                    })}\n\n"
+                        'size_mb': round(os.path.getsize(output_path) / (1024*1024), 2),
+                        'direct_path': f'/projects/{pid}/{output_name}',
+                        'thumbnail_url': thumbnail_url,  # NOVO
+                        'thumbnail_status': thumbnail_status  # NOVO ('custom', 'auto', 'failed')
+                    }
+                    
+                    logger.finish("completed")
+                    yield await send_log("🎉 VÍDEO FINALIZADO!")
+
+                    if thumbnail_url:
+                        yield await send_log(f"🖼️ Thumbnail: {thumbnail_url}")
+                    
+                    # Envia em uma linha só, sem quebras dentro da string
+                    yield f"data: {json.dumps(final_data)}\n\n"
+
                 else:
                     logger.finish("failed", "Falha ao concatenar vídeos")
                     yield await send_log("❌ Erro ao unir vídeos")
